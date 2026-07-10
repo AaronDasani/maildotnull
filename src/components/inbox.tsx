@@ -2,12 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  CheckCheck,
   CircleCheck,
   CircleX,
+  Download,
   Info,
   Inbox as InboxIcon,
   Loader2,
   Mail,
+  MailOpen,
   Monitor,
   Moon,
   Paperclip,
@@ -20,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { darkenEmailHtml } from "@/lib/dark-preview";
 import type { EmailSummary, MailSource } from "@/lib/types";
 import {
   extractLinks,
@@ -68,15 +72,6 @@ const DEVICES: { id: Device; label: string; icon: typeof Monitor }[] = [
   { id: "tablet", label: "Tablet (768px)", icon: Tablet },
   { id: "mobile", label: "Mobile (375px)", icon: Smartphone },
 ];
-
-// Classic force-dark trick: invert the whole document, then re-invert media so
-// photos and logos keep their real colors. Works on emails that only ship a
-// light theme, which is nearly all of them.
-const DARK_PREVIEW_STYLE = `<style data-mailburli-dark>
-:root { color-scheme: dark; }
-html { filter: invert(1) hue-rotate(180deg); background: #ffffff; }
-img, picture, video, svg { filter: invert(1) hue-rotate(180deg); }
-</style>`;
 
 const timeFormat = new Intl.DateTimeFormat(undefined, {
   hour: "2-digit",
@@ -145,6 +140,62 @@ function CheatSheet() {
       </p>
     </div>
   );
+}
+
+/** Mirror the unread count in the tab: title prefix plus a badge drawn onto the favicon. */
+function useUnreadBadge(unread: number) {
+  useEffect(() => {
+    document.title = unread > 0 ? `(${unread}) Mailburli` : "Mailburli";
+
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 64;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // Redraw the app logo (rounded primary square with an envelope) as the base icon.
+    const primary =
+      getComputedStyle(document.documentElement).getPropertyValue("--primary").trim() ||
+      "#3b62e0";
+    ctx.beginPath();
+    ctx.roundRect(0, 0, 64, 64, 14);
+    ctx.fillStyle = primary;
+    ctx.fill();
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 4.5;
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.roundRect(13, 19, 38, 27, 4);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(15, 22);
+    ctx.lineTo(32, 36);
+    ctx.lineTo(49, 22);
+    ctx.stroke();
+
+    if (unread > 0) {
+      ctx.beginPath();
+      ctx.arc(45, 19, 17, 0, Math.PI * 2);
+      ctx.fillStyle = "#ef4444";
+      ctx.fill();
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "#ffffff";
+      ctx.stroke();
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 23px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(unread > 9 ? "9+" : String(unread), 45, 21);
+    }
+
+    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "icon";
+      document.head.appendChild(link);
+    }
+    link.type = "image/png";
+    link.href = canvas.toDataURL("image/png");
+  }, [unread]);
 }
 
 const SEVERITY_STYLES: Record<CheckSeverity, { icon: typeof Info; className: string }> = {
@@ -265,14 +316,123 @@ function LinkCheckPane({ detail }: { detail: EmailDetail }) {
   );
 }
 
+function downloadBlob(filename: string, content: string, type: string) {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function DownloadMenu({ detail }: { detail: EmailDetail }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  const items: { label: string; run: () => void }[] = [];
+  if (detail.raw) {
+    const raw = detail.raw;
+    // HTTP-provider sends store the JSON request body as raw; SMTP/SES raw store MIME.
+    const isJson = raw.trimStart().startsWith("{");
+    items.push({
+      label: "Raw message",
+      run: () =>
+        downloadBlob(
+          `${detail.id}${isJson ? ".json" : ".eml"}`,
+          raw,
+          isJson ? "application/json" : "message/rfc822"
+        ),
+    });
+  }
+  if (detail.html) {
+    const html = detail.html;
+    items.push({
+      label: "HTML body",
+      run: () => downloadBlob(`${detail.id}.html`, html, "text/html"),
+    });
+  }
+  if (detail.text) {
+    const text = detail.text;
+    items.push({
+      label: "Text body",
+      run: () => downloadBlob(`${detail.id}.txt`, text, "text/plain"),
+    });
+  }
+  if (items.length === 0 && detail.attachments.length === 0) return null;
+
+  const itemClass =
+    "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent/50";
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title="Download"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+      >
+        <Download className="size-4" />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-full z-20 mt-1 min-w-44 overflow-hidden rounded-md border bg-card py-1 shadow-lg"
+        >
+          {items.map((item) => (
+            <button
+              key={item.label}
+              role="menuitem"
+              onClick={() => {
+                item.run();
+                setOpen(false);
+              }}
+              className={itemClass}
+            >
+              <Download className="size-3.5 shrink-0 text-muted-foreground" />
+              {item.label}
+            </button>
+          ))}
+          {items.length > 0 && detail.attachments.length > 0 && <div className="my-1 border-t" />}
+          {detail.attachments.map((a) => (
+            <a
+              key={a.index}
+              role="menuitem"
+              href={`/api/messages/${detail.id}/attachments/${a.index}`}
+              onClick={() => setOpen(false)}
+              className={itemClass}
+            >
+              <Paperclip className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="max-w-56 truncate font-mono text-xs">{a.filename}</span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DetailPane({
   detail,
+  read,
   onDelete,
   onClose,
+  onToggleRead,
 }: {
   detail: EmailDetail;
+  read: boolean;
   onDelete: () => void;
   onClose: () => void;
+  onToggleRead: () => void;
 }) {
   const [tab, setTab] = useState<Tab>(detail.html ? "html" : detail.text ? "text" : "headers");
   const [device, setDevice] = useState<Device>("desktop");
@@ -280,6 +440,10 @@ function DetailPane({
   const [darkOverride, setDarkOverride] = useState<boolean | null>(null);
   const appDark = useAppDark();
   const previewDark = darkOverride ?? appDark;
+  const previewHtml = useMemo(
+    () => (detail.html && previewDark ? darkenEmailHtml(detail.html) : detail.html),
+    [detail.html, previewDark]
+  );
 
   const tabs: { id: Tab; label: string; enabled: boolean }[] = [
     { id: "html", label: "HTML", enabled: Boolean(detail.html) },
@@ -317,6 +481,14 @@ function DetailPane({
             </h2>
           </div>
           <div className="flex shrink-0 gap-1">
+            <DownloadMenu detail={detail} />
+            <button
+              onClick={onToggleRead}
+              title={read ? "Mark as unread" : "Mark as read"}
+              className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+            >
+              {read ? <Mail className="size-4" /> : <MailOpen className="size-4" />}
+            </button>
             <button
               onClick={onDelete}
               title="Delete message"
@@ -412,11 +584,12 @@ function DetailPane({
           <div className="flex h-full justify-center overflow-auto bg-muted/50">
             <iframe
               sandbox=""
-              srcDoc={previewDark ? DARK_PREVIEW_STYLE + detail.html : detail.html}
+              srcDoc={previewHtml}
               title="HTML preview"
               style={{ width: DEVICE_WIDTHS[device], maxWidth: "100%" }}
               className={cn(
-                "h-full shrink-0 bg-white",
+                "h-full shrink-0",
+                previewDark ? "bg-[#121212]" : "bg-white",
                 device !== "desktop" && "border-x shadow-sm"
               )}
             />
@@ -452,7 +625,7 @@ function DetailPane({
                   <td className="whitespace-nowrap px-6 py-2 font-mono text-xs font-medium">
                     {key}
                   </td>
-                  <td className="break-all px-6 py-2 font-mono text-xs text-muted-foreground">
+                  <td className="whitespace-pre-wrap px-6 py-2 font-mono text-xs text-muted-foreground [overflow-wrap:anywhere]">
                     {value}
                   </td>
                 </tr>
@@ -470,6 +643,7 @@ export function Inbox() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<EmailDetail | null>(null);
   const [query, setQuery] = useState("");
+  const [info, setInfo] = useState<"smtp" | "http" | null>(null);
   const selectedIdRef = useRef(selectedId);
 
   useEffect(() => {
@@ -520,6 +694,20 @@ export function Inbox() {
     [refresh]
   );
 
+  const setRead = useCallback(async (id: string, read: boolean) => {
+    await fetch(`/api/messages/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ read }),
+    });
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, read } : m)));
+  }, []);
+
+  const markAllRead = useCallback(async () => {
+    await fetch("/api/messages", { method: "PATCH" });
+    setMessages((prev) => prev.map((m) => (m.read ? m : { ...m, read: true })));
+  }, []);
+
   const clearAll = useCallback(async () => {
     await fetch("/api/messages", { method: "DELETE" });
     setSelectedId(null);
@@ -537,23 +725,106 @@ export function Inbox() {
     : messages;
 
   const unread = messages.filter((m) => !m.read).length;
+  useUnreadBadge(unread);
+
+  const goHome = useCallback(() => {
+    setSelectedId(null);
+    setDetail(null);
+  }, []);
+
+  const pillClass =
+    "flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground";
 
   return (
     <div className="relative z-10 flex h-screen flex-col">
       <header className="flex items-center gap-3 border-b bg-card px-4 py-2.5">
-        <div className="flex size-8 items-center justify-center rounded-lg bg-primary">
-          <Mail className="size-4.5 text-primary-foreground" />
-        </div>
-        <h1 className="text-base font-semibold">Mailburli</h1>
+        <button
+          onClick={goHome}
+          title="Show start page"
+          className="flex items-center gap-3 transition-opacity hover:opacity-80"
+        >
+          <div className="relative flex size-8 items-center justify-center rounded-lg bg-primary">
+            <Mail className="size-4.5 text-primary-foreground" />
+            {unread > 0 && (
+              <span className="absolute -right-1.5 -top-1.5 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-red-500 px-1 font-mono text-[10px] font-bold leading-none text-white">
+                {unread > 99 ? "99+" : unread}
+              </span>
+            )}
+          </div>
+          <h1 className="text-base font-semibold">Mailburli</h1>
+        </button>
         <div className="ml-2 hidden items-center gap-2 sm:flex">
-          <span className="flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-xs text-muted-foreground">
-            <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
-            smtp :1025
-          </span>
-          <span className="flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-xs text-muted-foreground">
-            <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
-            http :8025 · 7 provider APIs
-          </span>
+          {info && (
+            <button
+              aria-label="Close info"
+              onClick={() => setInfo(null)}
+              className="fixed inset-0 z-40 cursor-default"
+            />
+          )}
+          <div className="relative z-50">
+            <button onClick={() => setInfo(info === "smtp" ? null : "smtp")} className={pillClass}>
+              <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
+              smtp :1025
+            </button>
+            {info === "smtp" && (
+              <div className="absolute left-0 top-full z-50 mt-2 w-80 rounded-lg border bg-card p-4 text-left shadow-lg">
+                <h3 className="text-sm font-semibold">SMTP server</h3>
+                <dl className="mt-2 space-y-1 text-xs">
+                  {[
+                    ["Host", "localhost"],
+                    ["Port", "1025"],
+                    ["Auth", "any credentials accepted"],
+                    ["TLS", "none (STARTTLS disabled)"],
+                  ].map(([k, v]) => (
+                    <div key={k} className="flex gap-2">
+                      <dt className="w-10 shrink-0 text-muted-foreground">{k}</dt>
+                      <dd className="font-mono">{v}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Override the port with the <code className="font-mono">MAILBURLI_SMTP_PORT</code>{" "}
+                  environment variable.
+                </p>
+              </div>
+            )}
+          </div>
+          <div className="relative z-50">
+            <button onClick={() => setInfo(info === "http" ? null : "http")} className={pillClass}>
+              <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
+              http :8025 · 7 provider APIs
+            </button>
+            {info === "http" && (
+              <div className="absolute left-0 top-full z-50 mt-2 w-96 rounded-lg border bg-card p-4 text-left shadow-lg">
+                <h3 className="text-sm font-semibold">Emulated provider APIs</h3>
+                <p className="mt-1 font-mono text-xs text-muted-foreground">
+                  http://localhost:8025
+                </p>
+                <div className="mt-2 space-y-1 text-xs">
+                  {Object.entries(PROVIDERS)
+                    .filter(([key]) => key !== "smtp")
+                    .map(([key, p]) => (
+                      <div key={key} className="flex gap-2">
+                        <span className="w-24 shrink-0 text-muted-foreground">{p.label}</span>
+                        <span className="min-w-0 truncate font-mono">{p.endpoint}</span>
+                      </div>
+                    ))}
+                </div>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Any API key is accepted.{" "}
+                  <button
+                    onClick={() => {
+                      setInfo(null);
+                      goHome();
+                    }}
+                    className="text-primary hover:underline"
+                  >
+                    Connection examples on the start page →
+                  </button>
+                </p>
+              </div>
+            )}
+          </div>
         </div>
         <div className="ml-auto flex items-center gap-2">
           {unread > 0 && (
@@ -561,6 +832,14 @@ export function Inbox() {
               {unread} new
             </span>
           )}
+          <button
+            onClick={markAllRead}
+            disabled={unread === 0}
+            className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground disabled:opacity-40"
+          >
+            <CheckCheck className="size-3.5" />
+            Mark all read
+          </button>
           <button
             onClick={clearAll}
             disabled={messages.length === 0}
@@ -603,9 +882,9 @@ export function Inbox() {
                 key={m.id}
                 onClick={() => select(m.id)}
                 className={cn(
-                  "block w-full border-b px-4 py-3 text-left transition-colors hover:bg-accent/50",
+                  "block w-full border-b border-l-2 border-l-transparent px-4 py-3 text-left transition-colors hover:bg-accent/50",
                   selectedId === m.id && "bg-accent/50",
-                  !m.read && "bg-primary/5"
+                  !m.read && "border-l-primary bg-primary/10"
                 )}
               >
                 <div className="flex items-center gap-2">
@@ -644,7 +923,12 @@ export function Inbox() {
             <DetailPane
               key={detail.id}
               detail={detail}
+              read={messages.find((m) => m.id === detail.id)?.read ?? true}
               onDelete={() => remove(detail.id)}
+              onToggleRead={() => {
+                const read = messages.find((m) => m.id === detail.id)?.read ?? true;
+                setRead(detail.id, !read);
+              }}
               onClose={() => {
                 setSelectedId(null);
                 setDetail(null);

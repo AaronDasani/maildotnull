@@ -10,10 +10,26 @@ export interface MailStore {
   add(email: Omit<StoredEmail, "id" | "receivedAt" | "read">): StoredEmail;
   list(): EmailSummary[];
   get(id: string): StoredEmail | undefined;
-  markRead(id: string): void;
+  setRead(id: string, read: boolean): boolean;
   markAllRead(): void;
   remove(id: string): boolean;
   clear(): void;
+}
+
+/** Visible text only: drop style/script/head blocks and comments before stripping tags. */
+function snippetSource(email: StoredEmail): string {
+  if (email.text?.trim()) return email.text;
+  if (!email.html) return "";
+  return email.html
+    .replace(/<(style|script|head|title)[^>]*>[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&quot;/gi, '"');
 }
 
 function createStore(): MailStore {
@@ -45,21 +61,20 @@ function createStore(): MailStore {
         receivedAt: e.receivedAt,
         read: e.read,
         hasAttachments: e.attachments.length > 0,
-        snippet: (e.text ?? e.html?.replace(/<[^>]*>/g, " ") ?? "")
-          .replace(/\s+/g, " ")
-          .trim()
-          .slice(0, 140),
+        snippet: snippetSource(e).replace(/\s+/g, " ").trim().slice(0, 140),
       }));
     },
     get(id) {
       return emails.find((e) => e.id === id);
     },
-    markRead(id) {
+    setRead(id, read) {
       const email = emails.find((e) => e.id === id);
-      if (email && !email.read) {
-        email.read = true;
+      if (!email) return false;
+      if (email.read !== read) {
+        email.read = read;
         emitter.emit("change");
       }
+      return true;
     },
     markAllRead() {
       let changed = false;
@@ -89,6 +104,9 @@ function createStore(): MailStore {
 const globalStore = globalThis as unknown as { __mailburliStore?: MailStore };
 
 export function getStore(): MailStore {
-  globalStore.__mailburliStore ??= createStore();
+  // Recreate (dropping messages) if an HMR-surviving instance predates newer store methods.
+  if (typeof globalStore.__mailburliStore?.setRead !== "function") {
+    globalStore.__mailburliStore = createStore();
+  }
   return globalStore.__mailburliStore;
 }

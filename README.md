@@ -36,6 +36,8 @@ The UI talks to a small internal API you can also script against:
 - `GET /api/messages` — list summaries
 - `GET /api/messages/:id` — full message (marks it read)
 - `GET /api/messages/:id/attachments/:index` — download an attachment
+- `PATCH /api/messages` — mark all messages read
+- `PATCH /api/messages/:id` — set read state (`{ "read": true | false }`)
 - `DELETE /api/messages/:id` — delete one message
 - `DELETE /api/messages` — clear the inbox
 - `GET /api/events` — server-sent events stream (`change` events)

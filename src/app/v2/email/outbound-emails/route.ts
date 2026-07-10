@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { simpleParser } from "mailparser";
-import { ingest } from "@/lib/ingest";
+import { headersFromParsed, ingest } from "@/lib/ingest";
 
 interface SesContent {
   Simple?: {
@@ -42,6 +42,7 @@ export async function POST(req: NextRequest) {
       subject: parsed.subject ?? "",
       text: parsed.text ?? undefined,
       html: parsed.html || undefined,
+      headers: headersFromParsed(parsed),
       attachments: parsed.attachments.map((a) => ({
         filename: a.filename ?? "attachment",
         contentType: a.contentType,

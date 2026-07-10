@@ -1,6 +1,7 @@
 import { SMTPServer } from "smtp-server";
 import { simpleParser, type AddressObject } from "mailparser";
 import { getStore } from "./store";
+import { headersFromParsed } from "./ingest";
 import type { StoredAttachment } from "./types";
 
 const SMTP_PORT = Number(process.env.MAILBURLI_SMTP_PORT ?? 1025);
@@ -37,10 +38,6 @@ export function startSmtpServer(): void {
               size: a.size,
               content: a.content.toString("base64"),
             }));
-            const headers: Record<string, string> = {};
-            for (const [key, value] of parsed.headers) {
-              headers[key] = typeof value === "string" ? value : JSON.stringify(value);
-            }
             getStore().add({
               source: "smtp",
               from: addressList(parsed.from)[0] ?? "",
@@ -51,7 +48,7 @@ export function startSmtpServer(): void {
               subject: parsed.subject ?? "",
               text: parsed.text ?? undefined,
               html: parsed.html || undefined,
-              headers,
+              headers: headersFromParsed(parsed),
               attachments,
               raw: raw.toString("utf8"),
             });
