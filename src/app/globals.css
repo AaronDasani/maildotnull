@@ -1,26 +1,133 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  /* Classic tech: white canvas, cool near-black ink, vibrant but not garish blue. */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.19 0.018 255);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.19 0.018 255);
+  --primary: oklch(0.55 0.22 258);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.97 0.008 255);
+  --secondary-foreground: oklch(0.22 0.02 255);
+  --muted: oklch(0.97 0.006 255);
+  --muted-foreground: oklch(0.48 0.015 255);
+  --accent: oklch(0.955 0.015 255);
+  --accent-foreground: oklch(0.22 0.02 255);
+  --destructive: oklch(0.57 0.22 27);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.92 0.008 255);
+  --input: oklch(0.92 0.008 255);
+  --ring: oklch(0.55 0.22 258);
+  --radius: 0.625rem;
+}
+
+.dark {
+  /* Cool near-black canvas, soft off-white ink, brighter blue so it pops on dark. */
+  --background: oklch(0.18 0.015 260);
+  --foreground: oklch(0.94 0.008 255);
+  --card: oklch(0.215 0.018 260);
+  --card-foreground: oklch(0.94 0.008 255);
+  --primary: oklch(0.62 0.2 258);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.27 0.02 260);
+  --secondary-foreground: oklch(0.94 0.008 255);
+  --muted: oklch(0.26 0.015 260);
+  --muted-foreground: oklch(0.68 0.015 255);
+  --accent: oklch(0.3 0.022 260);
+  --accent-foreground: oklch(0.96 0.008 255);
+  --destructive: oklch(0.62 0.2 27);
+  --destructive-foreground: oklch(0.99 0 0);
+  --border: oklch(0.32 0.015 260);
+  --input: oklch(0.32 0.015 260);
+  --ring: oklch(0.62 0.2 258);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
   }
-}
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "ss01", "cv11", "cv02", "cv03";
+  }
+  html {
+    @apply font-sans;
+  }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /* Tailwind v4 dropped the default `cursor: pointer` on buttons. Restore it
+     for every interactive control so the whole app shows a pointer on hover. */
+  button:not(:disabled),
+  summary,
+  label[for],
+  select:not(:disabled),
+  a[href],
+  [role="button"]:not([aria-disabled="true"]),
+  [role="tab"]:not([aria-disabled="true"]),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  input[type="submit"]:not(:disabled),
+  input[type="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  select:disabled,
+  [role="button"][aria-disabled="true"],
+  [role="tab"][aria-disabled="true"],
+  input:disabled {
+    cursor: not-allowed;
+  }
+
+  /* Very subtle cold blue glow from the top so the pure-white canvas has a hint
+     of depth without introducing any warm tones. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background: radial-gradient(
+      ellipse 1400px 900px at 50% -15%,
+      color-mix(in oklab, var(--primary) 5%, transparent) 0%,
+      transparent 55%
+    );
+  }
+
+  /* Tabular figures for monospace + code so numbers line up in data-dense UI. */
+  .font-mono,
+  code,
+  kbd,
+  samp {
+    font-feature-settings: "tnum", "zero", "ss01";
+  }
 }
