@@ -23,7 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { darkenEmailHtml } from "@/lib/dark-preview";
+import { preparePreviewHtml } from "@/lib/dark-preview";
 import type { EmailSummary, MailSource } from "@/lib/types";
 import {
   extractLinks,
@@ -441,7 +441,7 @@ function DetailPane({
   const appDark = useAppDark();
   const previewDark = darkOverride ?? appDark;
   const previewHtml = useMemo(
-    () => (detail.html && previewDark ? darkenEmailHtml(detail.html) : detail.html),
+    () => (detail.html ? preparePreviewHtml(detail.html, previewDark) : detail.html),
     [detail.html, previewDark]
   );
 
@@ -583,7 +583,9 @@ function DetailPane({
         {tab === "html" && detail.html && (
           <div className="flex h-full justify-center overflow-auto bg-muted/50">
             <iframe
-              sandbox=""
+              // Popups only, so links (forced to target=_blank) open in a real
+              // tab. Scripts, same-origin access, and navigation stay blocked.
+              sandbox="allow-popups allow-popups-to-escape-sandbox"
               srcDoc={previewHtml}
               title="HTML preview"
               style={{ width: DEVICE_WIDTHS[device], maxWidth: "100%" }}
@@ -651,7 +653,12 @@ export function Inbox() {
   }, [selectedId]);
 
   const refresh = useCallback(async () => {
-    const res = await fetch("/api/messages");
+    let res: Response;
+    try {
+      res = await fetch("/api/messages");
+    } catch {
+      return; // server restarting; the SSE onerror fallback retries
+    }
     if (!res.ok) return;
     const list: EmailSummary[] = await res.json();
     setMessages(list);

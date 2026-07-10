@@ -189,9 +189,25 @@ function remapLegacyAttr(el: Element, attr: string, role: ColorRole): void {
   el.setAttribute(attr, `#${hex(m[1])}${hex(m[2])}${hex(m[3])}`);
 }
 
-export function darkenEmailHtml(html: string): string {
+// Prepare an email's HTML for the preview iframe: force every link to open
+// in a new tab (the sandbox blocks in-place navigation, and the app must
+// never be navigated away by mail content), then optionally apply the dark
+// remap. Per-link target beats any <base target> the email ships.
+export function preparePreviewHtml(html: string, dark: boolean): string {
   const doc = new DOMParser().parseFromString(html, "text/html");
 
+  for (const a of Array.from(doc.querySelectorAll("a, area"))) {
+    a.setAttribute("target", "_blank");
+    a.setAttribute("rel", "noreferrer noopener");
+  }
+
+  if (dark) applyDarkRemap(doc);
+
+  // Preserve the original rendering mode: only emit a doctype if one existed.
+  return (doc.doctype ? "<!doctype html>" : "") + doc.documentElement.outerHTML;
+}
+
+function applyDarkRemap(doc: Document): void {
   for (const styleEl of Array.from(doc.querySelectorAll("style"))) {
     // Constructable sheets parse CSS text without needing a live document.
     const sheet = new CSSStyleSheet();
@@ -223,7 +239,4 @@ export function darkenEmailHtml(html: string): string {
   const base = doc.createElement("style");
   base.textContent = ":root{color-scheme:dark}body{background-color:#121212;color:#e0e0e0}";
   doc.head.insertBefore(base, doc.head.firstChild);
-
-  // Preserve the original rendering mode: only emit a doctype if one existed.
-  return (doc.doctype ? "<!doctype html>" : "") + doc.documentElement.outerHTML;
 }
