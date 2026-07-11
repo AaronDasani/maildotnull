@@ -6,6 +6,8 @@ import {
   CircleCheck,
   CircleX,
   Download,
+  FlaskConical,
+  Globe,
   Info,
   Inbox as InboxIcon,
   Loader2,
@@ -15,6 +17,7 @@ import {
   Moon,
   Paperclip,
   Search,
+  Server,
   Smartphone,
   Sun,
   Tablet,
@@ -32,6 +35,14 @@ import {
   type LinkCheckResult,
 } from "@/lib/mail-checks";
 import { PROVIDERS } from "@/lib/providers";
+import type {
+  ErrorTestingState,
+  HttpFaultMode,
+  HttpSource,
+  ProviderFaultMode,
+  SmtpAuthMode,
+  SmtpFaultMode,
+} from "@/lib/error-testing";
 import { ThemeToggle, useAppDark } from "@/components/theme-toggle";
 
 interface AttachmentMeta {
@@ -78,10 +89,58 @@ const timeFormat = new Intl.DateTimeFormat(undefined, {
   minute: "2-digit",
   second: "2-digit",
 });
+const dateFormat = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+});
 const dateTimeFormat = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
   timeStyle: "medium",
 });
+
+/** Time for today's mail, short date for anything older. */
+function formatListTime(iso: string): string {
+  const d = new Date(iso);
+  return d.toDateString() === new Date().toDateString()
+    ? timeFormat.format(d)
+    : dateFormat.format(d);
+}
+
+const focusRing = "outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50";
+
+/** Every mail source except SMTP — the HTTP provider APIs, in registry order. */
+const HTTP_PROVIDER_SOURCES = Object.keys(PROVIDERS).filter((s) => s !== "smtp") as HttpSource[];
+
+type ErrorTestingPatch = {
+  http?: HttpFaultMode;
+  providers?: Partial<Record<HttpSource, ProviderFaultMode>>;
+  smtp?: SmtpFaultMode;
+  smtpAuth?: SmtpAuthMode;
+  delaySeconds?: number;
+};
+
+const HTTP_FAULT_OPTIONS: { value: HttpFaultMode; label: string }[] = [
+  { value: "off", label: "Off" },
+  { value: "delay", label: "Delay response" },
+  { value: "rate-limit", label: "429 rate limit" },
+  { value: "server-error", label: "500 server error" },
+  { value: "timeout", label: "Timeout (no response)" },
+];
+const SMTP_FAULT_OPTIONS: { value: SmtpFaultMode; label: string }[] = [
+  { value: "off", label: "Off" },
+  { value: "delay", label: "Delay response" },
+  { value: "timeout", label: "Timeout (no response)" },
+  { value: "reject-temporary", label: "451 temporary reject" },
+  { value: "reject-permanent", label: "550 permanent reject" },
+];
+
+function errorTestingActive(state: ErrorTestingState | null): boolean {
+  if (!state) return false;
+  if (state.smtp !== "off" || state.smtpAuth === "required") return true;
+  return Object.values(state.providers).some((m) =>
+    m === "inherit" ? state.http !== "off" : m !== "off"
+  );
+}
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -100,6 +159,182 @@ function SourceBadge({ source }: { source: MailSource }) {
     >
       {provider.label}
     </span>
+  );
+}
+
+function ErrorTestingPanel({
+  state,
+  onChange,
+}: {
+  state: ErrorTestingState | null;
+  onChange: (patch: ErrorTestingPatch) => void;
+}) {
+  if (!state) return null;
+
+  const selectClass = cn(
+    "cursor-pointer rounded-md border bg-background px-2 py-1 text-xs transition-colors hover:border-ring",
+    focusRing
+  );
+  const rowTitle = "text-xs font-medium";
+  const rowHint = "mt-0.5 text-[11px] leading-4 text-muted-foreground";
+  const sectionTitle = "text-[11px] font-medium uppercase tracking-wide text-muted-foreground";
+
+  const commitDelay = (raw: string) => {
+    const value = Math.round(Number(raw));
+    if (Number.isFinite(value) && value >= 1 && value <= 300 && value !== state.delaySeconds) {
+      onChange({ delaySeconds: value });
+    }
+  };
+
+  const turnAllOff = () =>
+    onChange({
+      http: "off",
+      providers: Object.fromEntries(HTTP_PROVIDER_SOURCES.map((s) => [s, "inherit"])),
+      smtp: "off",
+      smtpAuth: "optional",
+    });
+
+  return (
+    <div className="absolute right-0 top-full z-50 mt-2 w-[30rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border bg-card text-left shadow-lg">
+      <div className="flex items-start justify-between gap-3 border-b bg-accent/30 px-4 py-3">
+        <div>
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+            <FlaskConical className="size-4 text-muted-foreground" />
+            Error testing
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Make MailDotNull misbehave to test your app&apos;s error handling. Failed sends are
+            rejected with the provider&apos;s real error format and are not stored.
+          </p>
+        </div>
+        <button
+          onClick={turnAllOff}
+          disabled={!errorTestingActive(state)}
+          className={cn(
+            "shrink-0 rounded-md border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground disabled:opacity-40",
+            focusRing
+          )}
+        >
+          Turn all off
+        </button>
+      </div>
+
+      <div className="px-4 py-3">
+        <div className={sectionTitle}>HTTP provider APIs</div>
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className={rowTitle}>All providers</div>
+            <div className={rowHint}>Applies to every endpoint, unless overridden below</div>
+          </div>
+          <select
+            value={state.http}
+            onChange={(e) => onChange({ http: e.target.value as HttpFaultMode })}
+            className={cn(selectClass, "w-44 shrink-0")}
+          >
+            {HTTP_FAULT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="mt-2.5 grid grid-cols-2 gap-x-8 gap-y-2">
+          {HTTP_PROVIDER_SOURCES.map((source) => (
+            <label key={source} className="flex items-center justify-between gap-2 text-xs">
+              <span className="truncate text-muted-foreground">{PROVIDERS[source].label}</span>
+              <select
+                value={state.providers[source]}
+                onChange={(e) =>
+                  onChange({ providers: { [source]: e.target.value as ProviderFaultMode } })
+                }
+                className={cn(
+                  selectClass,
+                  "w-32 shrink-0",
+                  state.providers[source] === "inherit" && "text-muted-foreground"
+                )}
+              >
+                <option value="inherit">Use global</option>
+                {HTTP_FAULT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="border-t px-4 py-3">
+        <div className={sectionTitle}>SMTP server</div>
+        <div className="mt-2 space-y-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className={rowTitle}>Incoming mail</div>
+              <div className={rowHint}>Rejects and stalls happen at MAIL FROM</div>
+            </div>
+            <select
+              value={state.smtp}
+              onChange={(e) => onChange({ smtp: e.target.value as SmtpFaultMode })}
+              className={cn(selectClass, "w-44 shrink-0")}
+            >
+              {SMTP_FAULT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className={rowTitle}>Authentication</div>
+              <div className={rowHint}>
+                &ldquo;Required&rdquo; rejects unauthenticated senders with 530 — any credentials
+                still work
+              </div>
+            </div>
+            <select
+              value={state.smtpAuth}
+              onChange={(e) => onChange({ smtpAuth: e.target.value as SmtpAuthMode })}
+              className={cn(selectClass, "w-44 shrink-0")}
+            >
+              <option value="optional">Optional</option>
+              <option value="required">Required</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className={rowTitle}>Delay duration</div>
+            <div className={rowHint}>How long &ldquo;Delay response&rdquo; faults wait</div>
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <input
+              type="number"
+              min={1}
+              max={300}
+              defaultValue={state.delaySeconds}
+              onBlur={(e) => commitDelay(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && commitDelay(e.currentTarget.value)}
+              aria-label="Delay duration in seconds"
+              className={cn(
+                "w-16 rounded-md border bg-background px-2 py-1 text-right text-xs transition-colors hover:border-ring",
+                focusRing
+              )}
+            />
+            <span className="text-xs text-muted-foreground">s</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t bg-accent/30 px-4 py-2 text-[11px] text-muted-foreground">
+        Scriptable via <code className="font-mono">PUT /api/error-testing</code> · resets on
+        restart
+      </div>
+    </div>
   );
 }
 
@@ -138,6 +373,11 @@ function CheatSheet() {
       <p className="text-xs text-muted-foreground">
         Any API key is accepted. Nothing is delivered, nothing is persisted.
       </p>
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <FlaskConical className="size-3.5" />
+        You can also test errors — use the error-testing button in the header to simulate
+        failures, delays, and timeouts.
+      </p>
     </div>
   );
 }
@@ -145,7 +385,7 @@ function CheatSheet() {
 /** Mirror the unread count in the tab: title prefix plus a badge drawn onto the favicon. */
 function useUnreadBadge(unread: number) {
   useEffect(() => {
-    document.title = unread > 0 ? `(${unread}) Mailburli` : "Mailburli";
+    document.title = unread > 0 ? `(${unread}) MailDotNull` : "MailDotNull";
 
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = 64;
@@ -181,20 +421,28 @@ function useUnreadBadge(unread: number) {
       ctx.strokeStyle = "#ffffff";
       ctx.stroke();
       ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 23px sans-serif";
+      const text = unread > 99 ? "99+" : String(unread);
+      ctx.font = `bold ${text.length > 1 ? 16 : 23}px sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(unread > 9 ? "9+" : String(unread), 45, 21);
+      ctx.fillText(text, 45, 21);
     }
 
-    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-    if (!link) {
-      link = document.createElement("link");
+    // Override every icon link (favicon.ico, shortcut icon, …) so the browser
+    // can't fall back to a static icon without the badge.
+    const href = canvas.toDataURL("image/png");
+    let links = document.querySelectorAll<HTMLLinkElement>('link[rel~="icon"]');
+    if (links.length === 0) {
+      const link = document.createElement("link");
       link.rel = "icon";
       document.head.appendChild(link);
+      links = document.querySelectorAll<HTMLLinkElement>('link[rel~="icon"]');
     }
-    link.type = "image/png";
-    link.href = canvas.toDataURL("image/png");
+    for (const link of links) {
+      link.type = "image/png";
+      link.removeAttribute("sizes");
+      link.href = href;
+    }
   }, [unread]);
 }
 
@@ -282,10 +530,15 @@ function LinkCheckPane({ detail }: { detail: EmailDetail }) {
         <button
           onClick={check}
           disabled={checking || checkable.length === 0}
-          className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground disabled:opacity-40"
+          className={cn(
+            "flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground disabled:opacity-40",
+            focusRing
+          )}
         >
-          {checking && <Loader2 className="size-3.5 animate-spin" />}
-          Check {checkable.length} link{checkable.length === 1 ? "" : "s"}
+          {checking && <Loader2 className="size-3.5 motion-safe:animate-spin" />}
+          {checking
+            ? "Checking…"
+            : `Check ${checkable.length} link${checkable.length === 1 ? "" : "s"}`}
         </button>
         <span className="text-xs text-muted-foreground">
           Requests each http(s) URL from this machine.
@@ -316,6 +569,11 @@ function LinkCheckPane({ detail }: { detail: EmailDetail }) {
   );
 }
 
+/** Mirror the selected message in the URL so a refresh (or a shared link) reopens it. */
+function setUrlId(id: string | null) {
+  window.history.replaceState(null, "", id ? `?id=${id}` : window.location.pathname);
+}
+
 function downloadBlob(filename: string, content: string, type: string) {
   const url = URL.createObjectURL(new Blob([content], { type }));
   const a = document.createElement("a");
@@ -334,8 +592,15 @@ function DownloadMenu({ detail }: { detail: EmailDetail }) {
     const close = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) setOpen(false);
     };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
     document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [open]);
 
   const items: { label: string; run: () => void }[] = [];
@@ -369,17 +634,24 @@ function DownloadMenu({ detail }: { detail: EmailDetail }) {
   }
   if (items.length === 0 && detail.attachments.length === 0) return null;
 
-  const itemClass =
-    "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent/50";
+  const itemClass = cn(
+    "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent/50",
+    focusRing,
+    "focus-visible:ring-inset"
+  );
 
   return (
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
         title="Download"
+        aria-label="Download"
         aria-haspopup="menu"
         aria-expanded={open}
-        className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+        className={cn(
+          "rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground",
+          focusRing
+        )}
       >
         <Download className="size-4" />
       </button>
@@ -485,21 +757,33 @@ function DetailPane({
             <button
               onClick={onToggleRead}
               title={read ? "Mark as unread" : "Mark as read"}
-              className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+              aria-label={read ? "Mark as unread" : "Mark as read"}
+              className={cn(
+                "rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground",
+                focusRing
+              )}
             >
               {read ? <Mail className="size-4" /> : <MailOpen className="size-4" />}
             </button>
             <button
               onClick={onDelete}
               title="Delete message"
-              className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent/50 hover:text-destructive"
+              aria-label="Delete message"
+              className={cn(
+                "rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent/50 hover:text-destructive",
+                focusRing
+              )}
             >
               <Trash2 className="size-4" />
             </button>
             <button
               onClick={onClose}
               title="Close"
-              className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground lg:hidden"
+              aria-label="Close"
+              className={cn(
+                "rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground lg:hidden",
+                focusRing
+              )}
             >
               <X className="size-4" />
             </button>
@@ -518,7 +802,10 @@ function DetailPane({
               <a
                 key={a.index}
                 href={`/api/messages/${detail.id}/attachments/${a.index}`}
-                className="flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-xs transition-colors hover:border-ring hover:text-primary"
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-xs transition-colors hover:border-ring hover:text-primary",
+                  focusRing
+                )}
               >
                 <Paperclip className="size-3 text-muted-foreground" />
                 <span className="max-w-48 truncate font-mono">{a.filename}</span>
@@ -527,17 +814,17 @@ function DetailPane({
             ))}
           </div>
         )}
-        <div className="mt-4 flex flex-wrap items-center gap-1" role="tablist">
+        <div className="mt-4 flex flex-wrap items-center gap-1">
           {tabs
             .filter((t) => t.enabled)
             .map((t) => (
               <button
                 key={t.id}
-                role="tab"
-                aria-selected={tab === t.id}
+                aria-pressed={tab === t.id}
                 onClick={() => setTab(t.id)}
                 className={cn(
                   "rounded-md px-3 py-1 text-sm font-medium transition-colors",
+                  focusRing,
                   tab === t.id
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
@@ -558,6 +845,7 @@ function DetailPane({
                     aria-pressed={device === id}
                     className={cn(
                       "flex size-7 items-center justify-center rounded-[5px] transition-colors",
+                      focusRing,
                       device === id
                         ? "bg-primary text-primary-foreground"
                         : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
@@ -571,7 +859,10 @@ function DetailPane({
                 onClick={() => setDarkOverride(!previewDark)}
                 title={previewDark ? "Show mail in light mode" : "Show mail in dark mode"}
                 aria-label={previewDark ? "Show mail in light mode" : "Show mail in dark mode"}
-                className="flex size-8 items-center justify-center rounded-md border text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+                className={cn(
+                  "flex size-8 items-center justify-center rounded-md border text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground",
+                  focusRing
+                )}
               >
                 {previewDark ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
               </button>
@@ -645,16 +936,34 @@ export function Inbox() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<EmailDetail | null>(null);
   const [query, setQuery] = useState("");
-  const [info, setInfo] = useState<"smtp" | "http" | null>(null);
+  const [info, setInfo] = useState<"smtp" | "http" | "errors" | null>(null);
+  const [errorTesting, setErrorTesting] = useState<ErrorTestingState | null>(null);
   const selectedIdRef = useRef(selectedId);
+  // Open the newest message once on page load; never again (the logo resets to the start page).
+  const autoOpenPending = useRef(true);
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
 
+  const select = useCallback(async (id: string) => {
+    setSelectedId(id);
+    setUrlId(id);
+    const res = await fetch(`/api/messages/${id}`);
+    if (res.ok) {
+      setDetail(await res.json());
+      setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, read: true } : m)));
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     let res: Response;
     try {
+      // Error-testing changes also emit the SSE change event, so refresh both here.
+      fetch("/api/error-testing")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((s) => s && setErrorTesting(s))
+        .catch(() => {});
       res = await fetch("/api/messages");
     } catch {
       return; // server restarting; the SSE onerror fallback retries
@@ -662,11 +971,18 @@ export function Inbox() {
     if (!res.ok) return;
     const list: EmailSummary[] = await res.json();
     setMessages(list);
+    if (autoOpenPending.current) {
+      autoOpenPending.current = false;
+      // A ?id= link takes precedence; it is restored by the effect below.
+      const linkedId = new URLSearchParams(window.location.search).get("id");
+      if (!linkedId && !selectedIdRef.current && list.length > 0) select(list[0].id);
+    }
     if (selectedIdRef.current && !list.some((m) => m.id === selectedIdRef.current)) {
       setSelectedId(null);
       setDetail(null);
+      setUrlId(null);
     }
-  }, []);
+  }, [select]);
 
   useEffect(() => {
     const initial = setTimeout(refresh, 0);
@@ -680,14 +996,13 @@ export function Inbox() {
     };
   }, [refresh]);
 
-  const select = useCallback(async (id: string) => {
-    setSelectedId(id);
-    const res = await fetch(`/api/messages/${id}`);
-    if (res.ok) {
-      setDetail(await res.json());
-      setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, read: true } : m)));
-    }
-  }, []);
+  // Reopen the message from ?id= on load (a vanished id is cleaned up by refresh()).
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("id");
+    if (!id) return;
+    const t = setTimeout(() => select(id), 0);
+    return () => clearTimeout(t);
+  }, [select]);
 
   const remove = useCallback(
     async (id: string) => {
@@ -695,6 +1010,7 @@ export function Inbox() {
       if (selectedIdRef.current === id) {
         setSelectedId(null);
         setDetail(null);
+        setUrlId(null);
       }
       refresh();
     },
@@ -710,15 +1026,26 @@ export function Inbox() {
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, read } : m)));
   }, []);
 
+  const changeErrorTesting = useCallback(async (patch: ErrorTestingPatch) => {
+    const res = await fetch("/api/error-testing", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (res.ok) setErrorTesting(await res.json());
+  }, []);
+
   const markAllRead = useCallback(async () => {
     await fetch("/api/messages", { method: "PATCH" });
     setMessages((prev) => prev.map((m) => (m.read ? m : { ...m, read: true })));
   }, []);
 
   const clearAll = useCallback(async () => {
+    if (!window.confirm("Delete all messages? This cannot be undone.")) return;
     await fetch("/api/messages", { method: "DELETE" });
     setSelectedId(null);
     setDetail(null);
+    setUrlId(null);
     refresh();
   }, [refresh]);
 
@@ -737,10 +1064,23 @@ export function Inbox() {
   const goHome = useCallback(() => {
     setSelectedId(null);
     setDetail(null);
+    setUrlId(null);
   }, []);
 
-  const pillClass =
-    "flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground";
+  // Close the connection-info popovers on Escape.
+  useEffect(() => {
+    if (!info) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setInfo(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [info]);
+
+  const pillClass = cn(
+    "flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground",
+    focusRing
+  );
 
   return (
     <div className="relative z-10 flex h-screen flex-col">
@@ -748,7 +1088,8 @@ export function Inbox() {
         <button
           onClick={goHome}
           title="Show start page"
-          className="flex items-center gap-3 transition-opacity hover:opacity-80"
+          aria-label="Show start page"
+          className={cn("flex items-center gap-3 rounded-md transition-opacity hover:opacity-80", focusRing)}
         >
           <div className="relative flex size-8 items-center justify-center rounded-lg bg-primary">
             <Mail className="size-4.5 text-primary-foreground" />
@@ -758,20 +1099,20 @@ export function Inbox() {
               </span>
             )}
           </div>
-          <h1 className="text-base font-semibold">Mailburli</h1>
+          <h1 className="text-base font-semibold">MailDotNull</h1>
         </button>
+        {info && (
+          <button
+            aria-label="Close info"
+            onClick={() => setInfo(null)}
+            className="fixed inset-0 z-40 cursor-default"
+          />
+        )}
         <div className="ml-2 hidden items-center gap-2 sm:flex">
-          {info && (
-            <button
-              aria-label="Close info"
-              onClick={() => setInfo(null)}
-              className="fixed inset-0 z-40 cursor-default"
-            />
-          )}
           <div className="relative z-50">
             <button onClick={() => setInfo(info === "smtp" ? null : "smtp")} className={pillClass}>
-              <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
-              smtp :1025
+              <Server className="size-3.5" />
+              smtp :1025 · :1587 · :1465
             </button>
             {info === "smtp" && (
               <div className="absolute left-0 top-full z-50 mt-2 w-80 rounded-lg border bg-card p-4 text-left shadow-lg">
@@ -779,9 +1120,9 @@ export function Inbox() {
                 <dl className="mt-2 space-y-1 text-xs">
                   {[
                     ["Host", "localhost"],
-                    ["Port", "1025"],
-                    ["Auth", "any credentials accepted"],
-                    ["TLS", "none (STARTTLS disabled)"],
+                    ["Ports", "1025 (plain) · 1587 (STARTTLS) · 1465 (TLS)"],
+                    ["Auth", errorTesting?.smtpAuth === "required" ? "required (any credentials)" : "any credentials accepted"],
+                    ["TLS", "self-signed cert — accept it in your client"],
                   ].map(([k, v]) => (
                     <div key={k} className="flex gap-2">
                       <dt className="w-10 shrink-0 text-muted-foreground">{k}</dt>
@@ -790,15 +1131,17 @@ export function Inbox() {
                   ))}
                 </dl>
                 <p className="mt-3 text-xs text-muted-foreground">
-                  Override the port with the <code className="font-mono">MAILBURLI_SMTP_PORT</code>{" "}
-                  environment variable.
+                  Override the ports with the{" "}
+                  <code className="font-mono">MAILDOTNULL_SMTP_PORT</code>,{" "}
+                  <code className="font-mono">MAILDOTNULL_STARTTLS_PORT</code>, and{" "}
+                  <code className="font-mono">MAILDOTNULL_SMTPS_PORT</code> environment variables.
                 </p>
               </div>
             )}
           </div>
           <div className="relative z-50">
             <button onClick={() => setInfo(info === "http" ? null : "http")} className={pillClass}>
-              <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
+              <Globe className="size-3.5" />
               http :8025 · 7 provider APIs
             </button>
             {info === "http" && (
@@ -834,6 +1177,24 @@ export function Inbox() {
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          <div className="relative z-50">
+            <button
+              onClick={() => setInfo(info === "errors" ? null : "errors")}
+              title="Configure error testing"
+              className={cn(
+                pillClass,
+                errorTestingActive(errorTesting) &&
+                  "border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200 hover:text-amber-900 dark:border-amber-700 dark:bg-amber-900 dark:text-amber-200 dark:hover:bg-amber-800 dark:hover:text-amber-100"
+              )}
+            >
+              <FlaskConical className="size-3.5" />
+              <span className="hidden md:inline">error testing</span>
+              {errorTestingActive(errorTesting) && <span>on</span>}
+            </button>
+            {info === "errors" && (
+              <ErrorTestingPanel state={errorTesting} onChange={changeErrorTesting} />
+            )}
+          </div>
           {unread > 0 && (
             <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground">
               {unread} new
@@ -842,7 +1203,10 @@ export function Inbox() {
           <button
             onClick={markAllRead}
             disabled={unread === 0}
-            className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground disabled:opacity-40"
+            className={cn(
+              "flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground disabled:opacity-40",
+              focusRing
+            )}
           >
             <CheckCheck className="size-3.5" />
             Mark all read
@@ -850,7 +1214,10 @@ export function Inbox() {
           <button
             onClick={clearAll}
             disabled={messages.length === 0}
-            className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground disabled:opacity-40"
+            className={cn(
+              "flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground disabled:opacity-40",
+              focusRing
+            )}
           >
             <Trash2 className="size-3.5" />
             Clear all
@@ -870,11 +1237,26 @@ export function Inbox() {
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <input
+                type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search messages"
-                className="w-full rounded-md border bg-background py-1.5 pl-8 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                aria-label="Search messages"
+                spellCheck={false}
+                className="w-full rounded-md border bg-background py-1.5 pl-8 pr-8 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 [&::-webkit-search-cancel-button]:hidden"
               />
+              {query && (
+                <button
+                  onClick={() => setQuery("")}
+                  aria-label="Clear search"
+                  className={cn(
+                    "absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground",
+                    focusRing
+                  )}
+                >
+                  <X className="size-3.5" />
+                </button>
+              )}
             </div>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
@@ -889,7 +1271,10 @@ export function Inbox() {
                 key={m.id}
                 onClick={() => select(m.id)}
                 className={cn(
-                  "block w-full border-b border-l-2 border-l-transparent px-4 py-3 text-left transition-colors hover:bg-accent/50",
+                  // content-visibility keeps huge inboxes cheap without a virtualization library.
+                  "block w-full border-b border-l-2 border-l-transparent px-4 py-3 text-left transition-colors hover:bg-accent/50 [content-visibility:auto] [contain-intrinsic-size:auto_5.5rem]",
+                  focusRing,
+                  "focus-visible:ring-inset",
                   selectedId === m.id && "bg-accent/50",
                   !m.read && "border-l-primary bg-primary/10"
                 )}
@@ -898,7 +1283,7 @@ export function Inbox() {
                   {!m.read && <span className="size-1.5 shrink-0 rounded-full bg-primary" />}
                   <span className="min-w-0 truncate text-sm font-medium">{m.from}</span>
                   <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground">
-                    {timeFormat.format(new Date(m.receivedAt))}
+                    {formatListTime(m.receivedAt)}
                   </span>
                 </div>
                 <div className="mt-0.5 flex items-center gap-2">
@@ -936,10 +1321,7 @@ export function Inbox() {
                 const read = messages.find((m) => m.id === detail.id)?.read ?? true;
                 setRead(detail.id, !read);
               }}
-              onClose={() => {
-                setSelectedId(null);
-                setDetail(null);
-              }}
+              onClose={goHome}
             />
           ) : (
             <CheatSheet />

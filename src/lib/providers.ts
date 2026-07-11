@@ -6,7 +6,7 @@ export interface ProviderInfo {
   badge: string;
   /** Endpoint shown in the connection cheat-sheet */
   endpoint: string;
-  /** How to point the client/SDK at Mailburli */
+  /** How to point the client/SDK at MailDotNull */
   hint: string;
 }
 
@@ -14,8 +14,8 @@ export const PROVIDERS: Record<MailSource, ProviderInfo> = {
   smtp: {
     label: "SMTP",
     badge: "bg-stone-200 text-stone-700 dark:bg-stone-700 dark:text-stone-200",
-    endpoint: "smtp://localhost:1025",
-    hint: "host: localhost, port: 1025 — no TLS, any credentials",
+    endpoint: "smtp://localhost:1025 · :1587 (STARTTLS) · :1465 (TLS)",
+    hint: "port 1025 (plain), 1587 (STARTTLS), 1465 (TLS) — self-signed cert, any credentials",
   },
   resend: {
     label: "Resend",

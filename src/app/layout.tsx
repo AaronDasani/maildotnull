@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Mailburli",
+  title: "MailDotNull",
   description: "Local mail catcher — SMTP plus mocked provider APIs",
 };
 
@@ -31,7 +31,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{if(localStorage.getItem('mailburli:theme')==='dark'){document.documentElement.classList.add('dark')}}catch(e){}`,
+            __html: `try{if(localStorage.getItem('maildotnull:theme')==='dark'){document.documentElement.classList.add('dark')}}catch(e){}`,
           }}
         />
         {children}

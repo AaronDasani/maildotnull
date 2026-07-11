@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { base64Size, ingest } from "@/lib/ingest";
+import { applyHttpFault } from "@/lib/error-testing";
 import { toArray } from "@/lib/addresses";
 
 interface ResendAttachment {
@@ -31,6 +32,9 @@ export async function POST(req: NextRequest) {
       { status: 422 }
     );
   }
+
+  const failure = await applyHttpFault("resend");
+  if (failure) return failure;
 
   const attachments = ((body.attachments as ResendAttachment[] | undefined) ?? []).map((a) => ({
     filename: a.filename ?? "attachment",

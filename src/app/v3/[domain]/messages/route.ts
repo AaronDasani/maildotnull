@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { ingest } from "@/lib/ingest";
+import { applyHttpFault } from "@/lib/error-testing";
 import { splitAddressList } from "@/lib/addresses";
 import type { StoredAttachment } from "@/lib/types";
 
@@ -33,6 +34,9 @@ export async function POST(
   if (!from || to.length === 0) {
     return NextResponse.json({ message: "'from' or 'to' parameter is missing" }, { status: 400 });
   }
+
+  const failure = await applyHttpFault("mailgun");
+  if (failure) return failure;
 
   const attachments: StoredAttachment[] = [];
   for (const value of [...form.getAll("attachment"), ...form.getAll("inline")]) {

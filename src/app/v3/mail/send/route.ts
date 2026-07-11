@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { base64Size, ingest } from "@/lib/ingest";
+import { applyHttpFault } from "@/lib/error-testing";
 import { formatAddress } from "@/lib/addresses";
 
 interface SendGridAddress {
@@ -45,6 +46,9 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+
+  const failure = await applyHttpFault("sendgrid");
+  if (failure) return failure;
 
   const text = body.content?.find((c) => c.type === "text/plain")?.value;
   const html = body.content?.find((c) => c.type === "text/html")?.value;

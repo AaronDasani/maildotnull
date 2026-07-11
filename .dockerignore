@@ -1,0 +1,12 @@
+.git
+.github
+.next
+node_modules
+docs
+.playwright-mcp
+README.md
+AGENTS.md
+CLAUDE.md
+Dockerfile
+.dockerignore
+tsconfig.tsbuildinfo

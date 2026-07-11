@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { base64Size, ingest } from "@/lib/ingest";
+import { applyHttpFault } from "@/lib/error-testing";
 import { formatAddress } from "@/lib/addresses";
 
 interface MailjetAddress {
@@ -43,6 +44,9 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+
+  const failure = await applyHttpFault("mailjet");
+  if (failure) return failure;
 
   const results = messages.map((m) => {
     ingest({

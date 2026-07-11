@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ingestPostmarkMessage, type PostmarkMessage } from "@/lib/postmark";
+import { applyHttpFault } from "@/lib/error-testing";
 
 /**
  * Postmark — POST https://api.postmarkapp.com/email
@@ -12,6 +13,9 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ ErrorCode: 300, Message: "Invalid JSON body" }, { status: 422 });
   }
+  const failure = await applyHttpFault("postmark");
+  if (failure) return failure;
+
   const result = ingestPostmarkMessage(body);
   return NextResponse.json(result, { status: result.ErrorCode === 0 ? 200 : 422 });
 }

@@ -1,6 +1,6 @@
-# Mailburli
+# MailDotNull
 
-A local mail catcher (like Mailpit) that also emulates the HTTP send APIs of popular email providers (Resend, SendGrid, Mailjet, Mailgun, Postmark, Brevo, Amazon SES). Services point their SDKs at Mailburli; every message lands in a live web inbox. Nothing is delivered, nothing is persisted — in-memory only, any API key is accepted.
+A local mail catcher (like Mailpit) that also emulates the HTTP send APIs of popular email providers (Resend, SendGrid, Mailjet, Mailgun, Postmark, Brevo, Amazon SES). Services point their SDKs at MailDotNull; every message lands in a live web inbox. Nothing is delivered, nothing is persisted — in-memory only, any API key is accepted.
 
 ## Stack
 
@@ -20,7 +20,7 @@ A local mail catcher (like Mailpit) that also emulates the HTTP send APIs of pop
 
 - `src/lib/store.ts` — singleton in-memory store (cap: 1000 messages, oldest dropped) with an `EventEmitter` that drives the SSE stream.
 - `src/lib/ingest.ts` — the single entry point every source (SMTP + all HTTP providers) must use to add a message.
-- `src/lib/smtp.ts` — SMTP server on port 1025 (override with `MAILBURLI_SMTP_PORT`); started from `src/instrumentation.ts` so it runs under both `pnpm dev` and `pnpm start`.
+- `src/lib/smtp.ts` — SMTP server on port 1025 (override with `MAILDOTNULL_SMTP_PORT`); started from `src/instrumentation.ts` so it runs under both `pnpm dev` and `pnpm start`.
 - `src/lib/providers.ts` — provider registry: label, badge classes, endpoint, and connection hint shown in the UI cheat-sheet.
 - `src/lib/types.ts` — `MailSource`, `StoredEmail`, and related shared types.
 - `src/app/api/` — internal inbox API (list/get/delete messages, attachment download, `GET /api/events` SSE stream). Documented in README's "Inbox API" section — keep both in sync.
@@ -41,7 +41,7 @@ A local mail catcher (like Mailpit) that also emulates the HTTP send APIs of pop
 - **Error handling**: validate at the HTTP/SMTP boundary and return the provider's real error shape; trust types internally. No defensive try/catch for impossible states.
 - **Security**: rendered HTML bodies must stay inside the fully sandboxed iframe — never relax the `sandbox` attribute or render message HTML directly.
 - **i18n**: English only. Do not add an i18n framework.
-- **Environment variables**: `MAILBURLI_SMTP_PORT` is the only one. Document any new var in the README.
+- **Environment variables**: `MAILDOTNULL_SMTP_PORT` is the only one. Document any new var in the README.
 - **Deployment**: none — this is a local dev tool, run via `pnpm dev` or `pnpm build && pnpm start`.
 
 # Basic Behaviour

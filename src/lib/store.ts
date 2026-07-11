@@ -101,12 +101,12 @@ function createStore(): MailStore {
 }
 
 // Survives Next.js dev-mode HMR module reloads.
-const globalStore = globalThis as unknown as { __mailburliStore?: MailStore };
+const globalStore = globalThis as unknown as { __maildotnullStore?: MailStore };
 
 export function getStore(): MailStore {
   // Recreate (dropping messages) if an HMR-surviving instance predates newer store methods.
-  if (typeof globalStore.__mailburliStore?.setRead !== "function") {
-    globalStore.__mailburliStore = createStore();
+  if (typeof globalStore.__maildotnullStore?.setRead !== "function") {
+    globalStore.__maildotnullStore = createStore();
   }
-  return globalStore.__mailburliStore;
+  return globalStore.__maildotnullStore;
 }

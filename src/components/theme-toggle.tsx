@@ -3,8 +3,8 @@
 import { useSyncExternalStore } from "react";
 import { Moon, Sun } from "lucide-react";
 
-const STORAGE_KEY = "mailburli:theme";
-const CHANGE_EVENT = "mailburli:theme";
+const STORAGE_KEY = "maildotnull:theme";
+const CHANGE_EVENT = "maildotnull:theme";
 
 function subscribe(callback: () => void) {
   window.addEventListener(CHANGE_EVENT, callback);

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { base64Size, ingest } from "@/lib/ingest";
+import { applyHttpFault } from "@/lib/error-testing";
 import { formatAddress } from "@/lib/addresses";
 
 interface BrevoAddress {
@@ -41,6 +42,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const failure = await applyHttpFault("brevo");
+  if (failure) return failure;
+
   ingest({
     source: "brevo",
     from: formatAddress(body.sender.email, body.sender.name),
@@ -63,5 +67,5 @@ export async function POST(req: NextRequest) {
     raw: JSON.stringify(body, null, 2),
   });
 
-  return NextResponse.json({ messageId: `<${randomUUID()}@mailburli>` }, { status: 201 });
+  return NextResponse.json({ messageId: `<${randomUUID()}@maildotnull>` }, { status: 201 });
 }

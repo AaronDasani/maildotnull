@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { simpleParser } from "mailparser";
 import { headersFromParsed, ingest } from "@/lib/ingest";
+import { applyHttpFault } from "@/lib/error-testing";
 
 interface SesContent {
   Simple?: {
@@ -27,6 +28,9 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ message: "Invalid JSON body" }, { status: 400 });
   }
+
+  const failure = await applyHttpFault("ses");
+  if (failure) return failure;
 
   if (body.Content?.Raw?.Data) {
     // Raw MIME message, base64-encoded — parse it like an SMTP delivery.
