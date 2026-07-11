@@ -120,3 +120,7 @@ scripts/release.sh 1.2.0
 ```
 
 The workflow needs two repository secrets: `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (a Docker Hub access token with read/write scope).
+
+## License
+
+[MIT](LICENSE)

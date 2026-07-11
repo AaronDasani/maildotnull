@@ -13,7 +13,6 @@ ENV HOSTNAME=0.0.0.0
 ENV PORT=8025
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
 USER node
 # Web UI / provider APIs on 8025, SMTP on 1025, STARTTLS on 1587, SMTPS on 1465
 EXPOSE 8025 1025 1587 1465
