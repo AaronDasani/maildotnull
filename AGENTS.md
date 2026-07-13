@@ -5,8 +5,9 @@ A local mail catcher (like Mailpit) that also emulates the HTTP send APIs of pop
 ## Stack
 
 - **Runtime**: Node.js, **pnpm only** (`packageManager: pnpm@10.30.0`) — do not use npm or yarn.
-- **Framework**: Next.js 16 (App Router), React 19, TypeScript strict mode.
-- **UI**: Tailwind CSS 4 (via `@tailwindcss/postcss`), `lucide-react` icons, `clsx` for conditional classes.
+- **Server**: Hono 4 + `@hono/node-server` (HTTP server), esbuild for the server bundle.
+- **Client**: Vite 7 + React 19 SPA, TypeScript strict mode.
+- **UI**: Tailwind CSS 4 (via `@tailwindcss/vite`), `lucide-react` icons, `clsx` for conditional classes.
 - **Mail**: `smtp-server` for the SMTP listener, `mailparser` for MIME parsing.
 - **No database, no auth, no test framework** — deliberate: the whole product is an ephemeral in-memory dev tool.
 
@@ -20,18 +21,21 @@ A local mail catcher (like Mailpit) that also emulates the HTTP send APIs of pop
 
 - `src/lib/store.ts` — singleton in-memory store (cap: 1000 messages, oldest dropped) with an `EventEmitter` that drives the SSE stream.
 - `src/lib/ingest.ts` — the single entry point every source (SMTP + all HTTP providers) must use to add a message.
-- `src/lib/smtp.ts` — SMTP server on port 1025 (override with `MAILDOTNULL_SMTP_PORT`); started from `src/instrumentation.ts` so it runs under both `pnpm dev` and `pnpm start`.
+- `src/lib/smtp.ts` — SMTP server on port 1025 (override with `MAILDOTNULL_SMTP_PORT`); started by the Vite dev plugin (`vite.config.ts`) in dev and by `src/server/index.ts` in production.
 - `src/lib/providers.ts` — provider registry: label, badge classes, endpoint, and connection hint shown in the UI cheat-sheet.
 - `src/lib/types.ts` — `MailSource`, `StoredEmail`, and related shared types.
-- `src/app/api/` — internal inbox API (list/get/delete messages, attachment download, `GET /api/events` SSE stream). Documented in README's "Inbox API" section — keep both in sync.
-- Provider emulation routes live at the paths the real SDKs call: `src/app/emails` (Resend), `src/app/v3/mail/send` (SendGrid), `src/app/v3.1/send` (Mailjet), `src/app/v3/[domain]/messages` (Mailgun), `src/app/email` + `src/app/email/batch` (Postmark), `src/app/v3/smtp/email` (Brevo), `src/app/v2/email/outbound-emails` (SES v2, `Simple` and raw MIME).
+- `src/server/app.ts` — Hono routing table, exports `app` + `API_PREFIXES`.
+- `src/server/routes/{inbox,events,error-testing,link-check}.ts` — internal inbox API (list/get/delete messages, attachment download, `GET /api/events` SSE stream). Documented in README's "Inbox API" section — keep both in sync.
+- Provider emulation lives in `src/server/routes/providers/{resend,sendgrid,mailjet,mailgun,postmark,brevo,ses}.ts`, registered in `src/server/app.ts` at the paths the real SDKs call (Resend `/emails`, SendGrid `/v3/mail/send`, Mailjet `/v3.1/send`, Mailgun `/v3/:domain/messages`, Postmark `/email` + `/email/batch`, Brevo `/v3/smtp/email`, SES v2 `/v2/email/outbound-emails` with `Simple` and raw MIME) — the Mailgun param route is registered last.
+- `src/server/index.ts` — production entry: serves the built SPA and API on port 8025, boots SMTP.
 - `src/components/inbox.tsx` — the entire web UI, a single client component.
+- Server code (`src/server/`, `src/lib/`) uses relative imports because it's loaded through the Vite config bundle; the `@/*` alias is for client code only.
 
 ## Conventions
 
 - **Web UI runs on port 8025** (`pnpm dev` / `pnpm start`); SMTP on 1025. Don't change ports — they mirror Mailpit's defaults.
-- **Run `pnpm check` before finishing** — it chains lint, `tsc --noEmit`, and `next build`.
-- **Adding a provider** touches four places: a route under `src/app/` at the SDK's real path, the `MailSource` union in `src/lib/types.ts`, the `PROVIDERS` registry in `src/lib/providers.ts`, and a README table row. All ingestion goes through `ingest()`.
+- **Run `pnpm check` before finishing** — it chains lint, `tsc --noEmit`, and the Vite/esbuild build.
+- **Adding a provider** touches five places: a handler in `src/server/routes/providers/`, its registration in `src/server/app.ts` (before the Mailgun param route), the `MailSource` union in `src/lib/types.ts`, the `PROVIDERS` registry in `src/lib/providers.ts`, and a README table row. All ingestion goes through `ingest()`.
 - **Icons**: `lucide-react` only. Do not add other icon libraries.
 - **Styling**: Tailwind utility classes only; conditional classes via `clsx`. No CSS modules, no styled-components, no inline style objects.
 - **Dark mode**: supported via Tailwind `dark:` variants — every new UI element needs both variants.
@@ -105,15 +109,3 @@ For multi-step tasks, state a brief plan:
 ```
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
-# This is NOT the Next.js you know
-<!-- BEGIN:nextjs-agent-rules -->
-
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
-<!-- END:nextjs-agent-rules -->
-
-- **`params` are async** in pages, layouts, and route handlers — `await` them (e.g. the `[id]` and `[domain]` routes).
-- **Turbopack is the default bundler** for dev and build.
-- **`src/instrumentation.ts` `register()`** runs once per server start — it's how the SMTP server boots; guard against double-starts as the existing code does.
-
-When unsure about a specific API, verify against the installed version (`next@16.2.10`) rather than assuming.

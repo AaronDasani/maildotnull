@@ -151,7 +151,7 @@ The web UI and provider APIs run on port 8025 (fixed via `pnpm dev` / `pnpm star
 ## Notes
 
 - Messages live in memory; a restart clears the inbox. The store keeps the most recent 1000 messages.
-- The SMTP server starts from `src/instrumentation.ts`, so it runs with both `pnpm dev` and `pnpm start`.
+- The SMTP server starts with the web server — in dev from the Vite plugin in `vite.config.ts`, in production from `src/server/index.ts` — so it runs with both `pnpm dev` and `pnpm start`.
 - HTML bodies always render inside a fully sandboxed iframe — caught mail can't run scripts or touch the app.
 
 ## Releases
