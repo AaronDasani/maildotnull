@@ -3,6 +3,7 @@
 .next
 node_modules
 docs
+assets
 .playwright-mcp
 README.md
 AGENTS.md

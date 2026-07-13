@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.svg" alt="MailDotNull logo" width="96" height="96" />
+  <img src="assets/logo.svg" alt="MailDotNull logo" width="96" height="96" />
 </p>
 
 <h1 align="center">MailDotNull</h1>
@@ -11,8 +11,8 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="inbox-dark.png" />
-    <img src="inbox-light.png" alt="MailDotNull inbox" />
+    <source media="(prefers-color-scheme: dark)" srcset="assets/inbox-dark.png" />
+    <img src="assets/inbox-light.png" alt="MailDotNull inbox" />
   </picture>
 </p>
 
@@ -35,6 +35,14 @@ docker run -d --name maildotnull \
   maildotnull/maildotnull
 ```
 
+### Podman
+
+```bash
+podman run -d --name maildotnull \
+  -p 8025:8025 -p 1025:1025 -p 1587:1587 -p 1465:1465 \
+  docker.io/maildotnull/maildotnull
+```
+
 ### From source
 
 ```bash
@@ -50,6 +58,17 @@ Then open:
 - **SMTPS**: `localhost:1465` (implicit TLS)
 
 Port 1025 never advertises STARTTLS, so clients that upgrade opportunistically (like nodemailer) keep working without TLS config. The certificate on 1587/1465 is self-signed and regenerated in memory on every start, so configure your client to accept it (e.g. nodemailer's `tls: { rejectUnauthorized: false }` — only for pointing at this local catcher, never for real mail servers).
+
+### Send yourself a test message
+
+```bash
+curl http://localhost:8025/emails \
+  -H "Authorization: Bearer re_anything" \
+  -H "Content-Type: application/json" \
+  -d '{"from": "Test <test@example.dev>", "to": ["you@example.com"], "subject": "Hello from MailDotNull", "text": "It works!"}'
+```
+
+It shows up in the inbox at http://localhost:8025 immediately.
 
 ## Connect your services
 
@@ -69,6 +88,13 @@ Responses mimic each provider's success shape so SDKs treat the send as successf
 ## Error testing
 
 Make MailDotNull misbehave to test your app's error handling — configure it via the flask button in the header or `PUT /api/error-testing`. A failing send is rejected and not stored; error responses use each provider's real error shape so official SDKs raise their typed errors.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/error-testing-dark.png" />
+    <img src="assets/error-testing-light.png" alt="Error testing panel — global delay, a per-provider 429 override for SendGrid, and an SMTP timeout" />
+  </picture>
+</p>
 
 - `http` — fault for **all** HTTP provider APIs: `off`, `delay` (respond `delaySeconds` late, then succeed), `rate-limit` (429), `server-error` (500), or `timeout` (no response — your client's timeout fires).
 - `providers` — per-provider override of `http`: `inherit` (default) or any of the modes above.
