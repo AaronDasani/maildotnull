@@ -1,9 +1,15 @@
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { app } from "./app";
+import { app, API_PREFIXES } from "./app";
 import { startSmtpServer } from "../lib/smtp";
 
-const PORT = Number(process.env.PORT ?? 8025);
+const PORT = 8025;
+
+// API-prefixed paths that matched no route must 404, not fall into the SPA.
+app.use("*", async (c, next) => {
+  if (API_PREFIXES.some((prefix) => c.req.path.startsWith(prefix))) return c.notFound();
+  await next();
+});
 
 // Static SPA build. Registered after the API routes (module load order in
 // app.ts), so /api and provider paths always win. Paths are relative to the
