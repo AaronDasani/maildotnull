@@ -16,4 +16,6 @@ COPY --from=builder /app/.next/static ./.next/static
 USER node
 # Web UI / provider APIs on 8025, SMTP on 1025, STARTTLS on 1587, SMTPS on 1465
 EXPOSE 8025 1025 1587 1465
-CMD ["node", "server.js"]
+# Podman overrides the HOSTNAME env var with the container hostname, which Next.js
+# standalone uses as the bind address — force 0.0.0.0 at start time instead.
+CMD ["sh", "-c", "HOSTNAME=0.0.0.0 exec node server.js"]

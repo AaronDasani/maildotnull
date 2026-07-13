@@ -39,9 +39,12 @@ docker run -d --name maildotnull \
 
 ```bash
 podman run -d --name maildotnull \
+  -e HOSTNAME=0.0.0.0 \
   -p 8025:8025 -p 1025:1025 -p 1587:1587 -p 1465:1465 \
   docker.io/maildotnull/maildotnull
 ```
+
+`-e HOSTNAME=0.0.0.0` is needed for the `0.1.0` image: Podman sets `HOSTNAME` to the container hostname, which the server would otherwise use as its bind address. Images newer than `0.1.0` force the bind address themselves, so the flag becomes optional.
 
 ### From source
 
