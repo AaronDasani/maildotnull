@@ -1,20 +1,111 @@
-// Gmail-style dark-mode rendering for the HTML preview.
+// Client-accurate dark-mode rendering for the HTML preview.
 //
-// Gmail's apps don't run scripts or honor prefers-color-scheme in emails —
-// they rewrite the email's colors. The transform is directional by role:
-// backgrounds/borders only ever get darker, text only ever gets lighter, and
-// the more chromatic a color the less it moves (a saturated brand button
-// keeps its color; white text on it stays white). We do the same, entirely
-// outside the sandboxed iframe: parse the HTML, rewrite stylesheet rules,
-// inline styles, and legacy color attributes, then hand the transformed
-// markup to srcDoc. The iframe sandbox stays fully locked down.
+// Real mail clients treat dark mode very differently, so the preview
+// simulates one client at a time. Four behaviors cover the landscape
+// (per Litmus/Email on Acid's categorization):
+//
+// - "none"    — dark app chrome only; the email renders unchanged
+//               (Yahoo Mail, Gmail web).
+// - "pcs"     — the client honors the email's own
+//               @media (prefers-color-scheme: dark) styles and otherwise
+//               renders it unchanged (Apple Mail).
+// - "partial" — directional rewrite: backgrounds only ever get darker,
+//               text only ever lighter, and the more chromatic a color the
+//               less it moves — a saturated brand button keeps its color,
+//               already-dark designs are left alone (Gmail Android,
+//               Outlook.com's fixContrast()).
+// - "full"    — unconditional lightness flip: even already-dark designs
+//               get inverted (Gmail iOS, Outlook for Windows).
+//
+// None of the vendors publish their exact algorithms; the partial/full
+// transforms here are the community-consensus approximation (flip
+// lightness, keep hue, damp by chroma). All rewriting happens outside the
+// sandboxed iframe: parse the HTML, rewrite stylesheet rules, inline
+// styles, and legacy color attributes, then hand the transformed markup
+// to srcDoc. The iframe sandbox stays fully locked down.
+
+export type DarkTransform = "none" | "pcs" | "partial" | "full";
+
+export interface DarkPreviewClient {
+  id: string;
+  label: string;
+  /** Plain-English description of what the client does to the email. */
+  hint: string;
+  /** Message-area background in the client's dark theme. */
+  bg: string;
+  /** Default text color in the client's dark theme. */
+  text: string;
+  transform: DarkTransform;
+}
+
+// Background/text hexes are measured or documented client values:
+// Gmail #202124/#E8EAED (Google dark-theme grays), Apple Mail iOS pure
+// black, Outlook.com ~#292929 (Fluent 2), Yahoo #1D2228 ("batcave").
+export const DARK_CLIENTS: DarkPreviewClient[] = [
+  {
+    id: "gmail-android",
+    label: "Gmail (Android)",
+    hint: "Darkens light backgrounds and lightens dark text; already-dark designs are left alone",
+    bg: "#202124",
+    text: "#e8eaed",
+    transform: "partial",
+  },
+  {
+    id: "gmail-ios",
+    label: "Gmail (iOS)",
+    hint: "Inverts all colors — even already-dark designs get flipped to light",
+    bg: "#202124",
+    text: "#e8eaed",
+    transform: "full",
+  },
+  {
+    id: "apple-mail",
+    label: "Apple Mail",
+    hint: "Applies the email's own dark-mode CSS (prefers-color-scheme); otherwise renders it unchanged",
+    bg: "#000000",
+    text: "#ffffff",
+    transform: "pcs",
+  },
+  {
+    id: "outlook-web",
+    label: "Outlook.com",
+    hint: "Darkens light backgrounds and lightens dark text; already-dark designs are left alone",
+    bg: "#292929",
+    text: "#ffffff",
+    transform: "partial",
+  },
+  {
+    id: "yahoo",
+    label: "Yahoo Mail",
+    hint: "Dark app chrome only — the email's own colors are not changed",
+    bg: "#1d2228",
+    text: "#ffffff",
+    transform: "none",
+  },
+];
 
 type ColorRole = "bg" | "text";
 
-// Lightness flip with compressed extremes: white maps to #121212 (Gmail's
-// dark surface) and black text to a light gray instead of pure white.
-function flipLightness(l: number): number {
-  return 0.88 - 0.81 * l;
+interface RemapParams {
+  /** true = unconditional flip ("full"); false = directional ("partial"). */
+  full: boolean;
+  /** Lightness that pure white maps to — the client's dark surface. */
+  floor: number;
+}
+
+// Lightness flip with compressed extremes: white maps to the client's dark
+// surface and black text to a light gray instead of pure white.
+function flipLightness(l: number, floor: number): number {
+  return 0.88 - (0.88 - floor) * l;
+}
+
+/** HSL lightness of a #rrggbb hex — used to derive each client's floor. */
+function hexLightness(hex: string): number {
+  const n = parseInt(hex.slice(1), 16);
+  const r = ((n >> 16) & 0xff) / 255;
+  const g = ((n >> 8) & 0xff) / 255;
+  const b = (n & 0xff) / 255;
+  return (Math.max(r, g, b) + Math.min(r, g, b)) / 2;
 }
 
 const CSS_KEYWORDS = new Set([
@@ -93,11 +184,13 @@ const remapCache = new Map<string, string | null>();
 // Remap a single CSS color value. Returns null when the value should be
 // left untouched (keywords, unparsable, fully transparent).
 //
-// Backgrounds move toward dark, text toward light — never the other way, so
-// white text and already-dark backgrounds survive unchanged. Background
-// movement is damped by chroma so saturated brand colors barely shift.
-function remapColor(value: string, role: ColorRole): string | null {
-  const key = `${role}:${value}`;
+// Partial: backgrounds move toward dark, text toward light — never the
+// other way, so white text and already-dark backgrounds survive unchanged.
+// Full: the lightness flip applies unconditionally, so dark designs get
+// inverted too. In both, background movement is damped by chroma so
+// saturated brand colors barely shift.
+function remapColor(value: string, role: ColorRole, p: RemapParams): string | null {
+  const key = `${role}:${p.full}:${p.floor}:${value}`;
   const cached = remapCache.get(key);
   if (cached !== undefined) return cached;
   let result: string | null = null;
@@ -111,13 +204,14 @@ function remapColor(value: string, role: ColorRole): string | null {
         const gf = parseInt(m[2], 10) / 255;
         const bf = parseInt(m[3], 10) / 255;
         const [h, s, l] = rgbToHsl(rf, gf, bf);
-        const flipped = flipLightness(l);
+        const flipped = flipLightness(l, p.floor);
         let l2: number;
         if (role === "text") {
-          l2 = Math.max(l, flipped);
+          l2 = p.full ? flipped : Math.max(l, flipped);
         } else {
           const chroma = Math.max(rf, gf, bf) - Math.min(rf, gf, bf);
-          l2 = l + (Math.min(l, flipped) - l) * (1 - chroma);
+          const target = p.full ? flipped : Math.min(l, flipped);
+          l2 = l + (target - l) * (1 - chroma);
         }
         const [r, g, b] = hslToRgb(h, s, l2);
         const ri = Math.round(r * 255);
@@ -134,31 +228,31 @@ function remapColor(value: string, role: ColorRole): string | null {
 // Remap hex/rgb/hsl tokens inside a compound value (gradient color stops).
 // Named colors inside gradients are left alone — a word-level replace would
 // also mangle url() contents, and named colors in gradients are rare.
-function remapColorTokens(value: string): string {
+function remapColorTokens(value: string, p: RemapParams): string {
   return value.replace(
     /#[0-9a-fA-F]{3,8}\b|\b(?:rgb|rgba|hsl|hsla)\(\s*[^)]*\)/g,
-    (token) => remapColor(token, "bg") ?? token
+    (token) => remapColor(token, "bg", p) ?? token
   );
 }
 
-function remapDeclaration(style: CSSStyleDeclaration): void {
+function remapDeclaration(style: CSSStyleDeclaration, p: RemapParams): void {
   for (const [prop, role] of COLOR_PROPS) {
     const value = style.getPropertyValue(prop);
     if (!value) continue;
-    const mapped = remapColor(value, role);
+    const mapped = remapColor(value, role, p);
     if (mapped) style.setProperty(prop, mapped, style.getPropertyPriority(prop));
   }
   const bgImage = style.getPropertyValue("background-image");
   if (bgImage && bgImage.includes("gradient")) {
     style.setProperty(
       "background-image",
-      remapColorTokens(bgImage),
+      remapColorTokens(bgImage, p),
       style.getPropertyPriority("background-image")
     );
   }
 }
 
-function remapRules(rules: CSSRuleList): void {
+function remapRules(rules: CSSRuleList, p: RemapParams): void {
   for (const rule of Array.from(rules)) {
     // Like Gmail, ignore the email's own dark theme and remap its light
     // styles instead — otherwise OS-dark + email-dark would double-flip.
@@ -169,20 +263,38 @@ function remapRules(rules: CSSRuleList): void {
       rule.media.mediaText = "not all";
       continue;
     }
-    if (rule instanceof CSSStyleRule) remapDeclaration(rule.style);
+    if (rule instanceof CSSStyleRule) remapDeclaration(rule.style, p);
     const inner = (rule as Partial<CSSGroupingRule>).cssRules;
-    if (inner && inner.length > 0) remapRules(inner);
+    if (inner && inner.length > 0) remapRules(inner, p);
+  }
+}
+
+// Apple Mail model: force the email's own dark-mode media queries on and
+// its light-only ones off. A combined condition like
+// "(prefers-color-scheme: dark) and (max-width: 600px)" loses its other
+// parts — acceptable, such combinations are rare in email CSS.
+function forcePrefersDark(rules: CSSRuleList): void {
+  for (const rule of Array.from(rules)) {
+    if (rule instanceof CSSMediaRule) {
+      if (/prefers-color-scheme\s*:\s*dark/i.test(rule.conditionText)) {
+        rule.media.mediaText = "all";
+      } else if (/prefers-color-scheme\s*:\s*light/i.test(rule.conditionText)) {
+        rule.media.mediaText = "not all";
+      }
+    }
+    const inner = (rule as Partial<CSSGroupingRule>).cssRules;
+    if (inner && inner.length > 0) forcePrefersDark(inner);
   }
 }
 
 // Legacy presentational attributes, still common in emails. These go through
 // HTML's legacy color parser, which mangles rgb() strings — emit hex only.
-function remapLegacyAttr(el: Element, attr: string, role: ColorRole): void {
+function remapLegacyAttr(el: Element, attr: string, role: ColorRole, p: RemapParams): void {
   const raw = el.getAttribute(attr)?.trim();
   if (!raw) return;
   // Legacy HTML accepts bare hex like bgcolor="ffffff"; CSS needs the #.
   const value = /^[0-9a-fA-F]{6}$/.test(raw) ? `#${raw}` : raw;
-  const mapped = remapColor(value, role);
+  const mapped = remapColor(value, role, p);
   const m = mapped && /^rgba?\((\d+), (\d+), (\d+)/.exec(mapped);
   if (!m) return;
   const hex = (n: string) => parseInt(n, 10).toString(16).padStart(2, "0");
@@ -191,9 +303,10 @@ function remapLegacyAttr(el: Element, attr: string, role: ColorRole): void {
 
 // Prepare an email's HTML for the preview iframe: force every link to open
 // in a new tab (the sandbox blocks in-place navigation, and the app must
-// never be navigated away by mail content), then optionally apply the dark
-// remap. Per-link target beats any <base target> the email ships.
-export function preparePreviewHtml(html: string, dark: boolean): string {
+// never be navigated away by mail content), then optionally apply the
+// selected client's dark-mode treatment. Per-link target beats any
+// <base target> the email ships.
+export function preparePreviewHtml(html: string, client: DarkPreviewClient | null): string {
   const doc = new DOMParser().parseFromString(html, "text/html");
 
   for (const a of Array.from(doc.querySelectorAll("a, area"))) {
@@ -201,42 +314,52 @@ export function preparePreviewHtml(html: string, dark: boolean): string {
     a.setAttribute("rel", "noreferrer noopener");
   }
 
-  if (dark) applyDarkRemap(doc);
+  if (client) applyDarkClient(doc, client);
 
   // Preserve the original rendering mode: only emit a doctype if one existed.
   return (doc.doctype ? "<!doctype html>" : "") + doc.documentElement.outerHTML;
 }
 
-function applyDarkRemap(doc: Document): void {
+function eachStyleSheet(doc: Document, visit: (rules: CSSRuleList) => void): void {
   for (const styleEl of Array.from(doc.querySelectorAll("style"))) {
     // Constructable sheets parse CSS text without needing a live document.
     const sheet = new CSSStyleSheet();
     sheet.replaceSync(styleEl.textContent ?? "");
-    remapRules(sheet.cssRules);
+    visit(sheet.cssRules);
     styleEl.textContent = Array.from(sheet.cssRules)
       .map((rule) => rule.cssText)
       .join("\n");
   }
+}
 
-  for (const el of Array.from(doc.querySelectorAll<HTMLElement>("[style]"))) {
-    remapDeclaration(el.style);
-  }
+function applyDarkClient(doc: Document, client: DarkPreviewClient): void {
+  if (client.transform === "pcs") {
+    eachStyleSheet(doc, forcePrefersDark);
+  } else if (client.transform === "partial" || client.transform === "full") {
+    const p: RemapParams = { full: client.transform === "full", floor: hexLightness(client.bg) };
 
-  for (const el of Array.from(doc.querySelectorAll("[bgcolor]"))) {
-    remapLegacyAttr(el, "bgcolor", "bg");
-  }
-  for (const el of Array.from(doc.querySelectorAll("font[color]"))) {
-    remapLegacyAttr(el, "color", "text");
-  }
-  if (doc.body) {
-    for (const attr of ["text", "link", "alink", "vlink"]) {
-      remapLegacyAttr(doc.body, attr, "text");
+    eachStyleSheet(doc, (rules) => remapRules(rules, p));
+
+    for (const el of Array.from(doc.querySelectorAll<HTMLElement>("[style]"))) {
+      remapDeclaration(el.style, p);
+    }
+
+    for (const el of Array.from(doc.querySelectorAll("[bgcolor]"))) {
+      remapLegacyAttr(el, "bgcolor", "bg", p);
+    }
+    for (const el of Array.from(doc.querySelectorAll("font[color]"))) {
+      remapLegacyAttr(el, "color", "text", p);
+    }
+    if (doc.body) {
+      for (const attr of ["text", "link", "alink", "vlink"]) {
+        remapLegacyAttr(doc.body, attr, "text", p);
+      }
     }
   }
 
-  // Dark defaults for emails that never declare colors; every explicitly
-  // declared color has already been remapped and overrides these.
+  // The client's dark defaults for emails that never declare colors; every
+  // explicitly declared or remapped color overrides these.
   const base = doc.createElement("style");
-  base.textContent = ":root{color-scheme:dark}body{background-color:#121212;color:#e0e0e0}";
+  base.textContent = `:root{color-scheme:dark}body{background-color:${client.bg};color:${client.text}}`;
   doc.head.insertBefore(base, doc.head.firstChild);
 }

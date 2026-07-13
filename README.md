@@ -109,6 +109,7 @@ The web UI and provider APIs run on port 8025 (fixed via `pnpm dev` / `pnpm star
 - Messages live in memory; a restart clears the inbox. The store keeps the most recent 1000 messages.
 - The SMTP server starts from `src/instrumentation.ts`, so it runs with both `pnpm dev` and `pnpm start`.
 - HTML bodies render in a fully sandboxed iframe. The preview follows the app theme (with a per-mail light/dark override) and can be viewed at desktop, tablet (768px), and mobile (375px) widths.
+- The dark preview simulates real clients — Gmail Android (partial inversion), Gmail iOS (full inversion), Apple Mail (honors the email's `prefers-color-scheme: dark` CSS), Outlook.com (partial inversion), and Yahoo Mail (no color changes) — each with its measured dark-theme background and text colors. The transforms approximate unpublished vendor algorithms; treat results as a close preview, not pixel truth.
 - Raw shows the payload exactly as received (MIME for SMTP and SES raw sends, the request body for HTTP APIs); HTML Check flags features known to break in mail clients; Link Check verifies each link's HTTP status on demand.
 
 ## Releases

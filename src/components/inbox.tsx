@@ -26,7 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { preparePreviewHtml } from "@/lib/dark-preview";
+import { DARK_CLIENTS, preparePreviewHtml } from "@/lib/dark-preview";
 import type { EmailSummary, MailSource } from "@/lib/types";
 import {
   extractLinks,
@@ -711,10 +711,14 @@ function DetailPane({
   // null = follow the app theme; true/false = explicit override for the mail only.
   const [darkOverride, setDarkOverride] = useState<boolean | null>(null);
   const appDark = useAppDark();
+  const [darkClientId, setDarkClientId] = useState(DARK_CLIENTS[0].id);
   const previewDark = darkOverride ?? appDark;
+  const darkClient = previewDark
+    ? (DARK_CLIENTS.find((c) => c.id === darkClientId) ?? DARK_CLIENTS[0])
+    : null;
   const previewHtml = useMemo(
-    () => (detail.html ? preparePreviewHtml(detail.html, previewDark) : detail.html),
-    [detail.html, previewDark]
+    () => (detail.html ? preparePreviewHtml(detail.html, darkClient) : detail.html),
+    [detail.html, darkClient]
   );
 
   const tabs: { id: Tab; label: string; enabled: boolean }[] = [
@@ -855,6 +859,24 @@ function DetailPane({
                   </button>
                 ))}
               </div>
+              {darkClient && (
+                <select
+                  value={darkClient.id}
+                  onChange={(e) => setDarkClientId(e.target.value)}
+                  title={darkClient.hint}
+                  aria-label="Dark mode client"
+                  className={cn(
+                    "h-8 cursor-pointer rounded-md border bg-background px-2 text-xs text-muted-foreground transition-colors hover:border-ring hover:text-foreground",
+                    focusRing
+                  )}
+                >
+                  {DARK_CLIENTS.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              )}
               <button
                 onClick={() => setDarkOverride(!previewDark)}
                 title={previewDark ? "Show mail in light mode" : "Show mail in dark mode"}
@@ -879,12 +901,14 @@ function DetailPane({
               sandbox="allow-popups allow-popups-to-escape-sandbox"
               srcDoc={previewHtml}
               title="HTML preview"
-              style={{ width: DEVICE_WIDTHS[device], maxWidth: "100%" }}
-              className={cn(
-                "h-full shrink-0",
-                previewDark ? "bg-[#121212]" : "bg-white",
-                device !== "desktop" && "border-x shadow-sm"
-              )}
+              style={{
+                width: DEVICE_WIDTHS[device],
+                maxWidth: "100%",
+                // Client backgrounds are data, not theme — Tailwind can't
+                // generate arbitrary classes at runtime.
+                backgroundColor: darkClient ? darkClient.bg : "#ffffff",
+              }}
+              className={cn("h-full shrink-0", device !== "desktop" && "border-x shadow-sm")}
             />
           </div>
         )}
