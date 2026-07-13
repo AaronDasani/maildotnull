@@ -9,7 +9,7 @@ RUN pnpm run build
 FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-ENV HOSTNAME=0.0.0.0
+ENV HOSTNAME=::
 ENV PORT=8025
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
@@ -17,5 +17,6 @@ USER node
 # Web UI / provider APIs on 8025, SMTP on 1025, STARTTLS on 1587, SMTPS on 1465
 EXPOSE 8025 1025 1587 1465
 # Podman overrides the HOSTNAME env var with the container hostname, which Next.js
-# standalone uses as the bind address — force 0.0.0.0 at start time instead.
-CMD ["sh", "-c", "HOSTNAME=0.0.0.0 exec node server.js"]
+# standalone uses as the bind address — force it at start time instead. "::" binds
+# dual-stack so rootless podman/pasta can forward host ::1 (localhost) connections.
+CMD ["sh", "-c", "HOSTNAME=:: exec node server.js"]
