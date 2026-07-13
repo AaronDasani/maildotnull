@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "repository": "github:arminreiter/maildotnull",
-  "homepage": "https://github.com/arminreiter/maildotnull",
+  "repository": "github:maildotnull/maildotnull",
+  "homepage": "https://github.com/maildotnull/maildotnull",
   "scripts": {
     "dev": "next dev -p 8025",
     "build": "next build",
