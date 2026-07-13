@@ -9,14 +9,11 @@ RUN pnpm run build
 FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-ENV HOSTNAME=::
-ENV PORT=8025
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
+RUN npm install -g pnpm@10.30.0
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile --prod
+COPY --from=builder /app/dist ./dist
 USER node
 # Web UI / provider APIs on 8025, SMTP on 1025, STARTTLS on 1587, SMTPS on 1465
 EXPOSE 8025 1025 1587 1465
-# Podman overrides the HOSTNAME env var with the container hostname, which Next.js
-# standalone uses as the bind address — force it at start time instead. "::" binds
-# dual-stack so rootless podman/pasta can forward host ::1 (localhost) connections.
-CMD ["sh", "-c", "HOSTNAME=:: exec node server.js"]
+CMD ["node", "dist/server/index.js"]

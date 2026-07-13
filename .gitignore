@@ -14,8 +14,7 @@
 # testing
 /coverage
 
-# next.js
-/.next/
+/dist
 /out/
 
 # production
