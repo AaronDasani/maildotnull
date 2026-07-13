@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import { getStore } from "./store";
 import type { MailSource } from "./types";
 
@@ -210,7 +209,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * Apply the configured fault for a provider. Returns the error response to send,
  * or null when the request should proceed (possibly after a delay).
  */
-export async function applyHttpFault(source: HttpSource): Promise<NextResponse | null> {
+export async function applyHttpFault(source: HttpSource): Promise<Response | null> {
   const state = getErrorTesting();
   const mode = effectiveHttpFault(state, source);
   switch (mode) {
@@ -222,10 +221,10 @@ export async function applyHttpFault(source: HttpSource): Promise<NextResponse |
     case "timeout":
       // Hold the request open so the client's own timeout fires; 504 as a backstop.
       await sleep(TIMEOUT_HOLD_MS);
-      return NextResponse.json({ message: "Simulated timeout (MailDotNull)." }, { status: 504 });
+      return Response.json({ message: "Simulated timeout (MailDotNull)." }, { status: 504 });
     default: {
       const { status, body, headers } = FAILURE_RESPONSES[source][mode];
-      return NextResponse.json(body, { status, headers });
+      return Response.json(body, { status, headers });
     }
   }
 }
