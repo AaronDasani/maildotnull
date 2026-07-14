@@ -84,18 +84,27 @@ func ParseMIME(raw []byte) (ParsedMail, error) {
 	}
 
 	parts := append(env.Attachments, env.Inlines...)
+	parts = append(parts, env.OtherParts...)
 	attachments := make([]store.Attachment, 0, len(parts))
+	html := env.HTML
 	for _, p := range parts {
 		filename := p.FileName
 		if filename == "" {
 			filename = "attachment"
 		}
+		encoded := base64.StdEncoding.EncodeToString(p.Content)
 		attachments = append(attachments, store.Attachment{
 			Filename:    filename,
 			ContentType: p.ContentType,
 			Size:        len(p.Content),
-			Content:     base64.StdEncoding.EncodeToString(p.Content),
+			Content:     encoded,
 		})
+		// Resolve cid: references to data URIs (mailparser did this for the TS
+		// server); the sandboxed preview iframe can't fetch cid: parts itself.
+		if p.ContentID != "" && html != "" {
+			cid := "cid:" + strings.Trim(p.ContentID, "<>")
+			html = strings.ReplaceAll(html, cid, "data:"+p.ContentType+";base64,"+encoded)
+		}
 	}
 
 	return ParsedMail{
@@ -106,7 +115,7 @@ func ParseMIME(raw []byte) (ParsedMail, error) {
 		ReplyTo:     first(addressList(env, "Reply-To")),
 		Subject:     env.GetHeader("Subject"),
 		Text:        env.Text,
-		HTML:        env.HTML,
+		HTML:        html,
 		Headers:     HeadersFromRaw(raw),
 		Attachments: attachments,
 	}, nil
