@@ -1,7 +1,6 @@
 package web
 
 import (
-	"encoding/base64"
 	"net/http"
 	"strconv"
 	"strings"
@@ -96,14 +95,9 @@ func (s *server) getAttachment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a := email.Attachments[index]
-	content, err := base64.StdEncoding.DecodeString(a.Content)
-	if err != nil {
-		notFound(w)
-		return
-	}
 	w.Header().Set("Content-Type", a.ContentType)
 	filename := strings.ReplaceAll(a.Filename, `"`, "")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(content)
+	_, _ = w.Write(a.Content)
 }

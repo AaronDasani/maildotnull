@@ -111,13 +111,13 @@ func (s *server) handleResend(w http.ResponseWriter, r *http.Request) {
 
 	attachments := make([]store.Attachment, 0, len(fields.Attachments))
 	for _, a := range fields.Attachments {
-		att := store.Attachment{
+		content := mailutil.DecodeBase64(a.Content)
+		attachments = append(attachments, store.Attachment{
 			Filename:    valueOr(a.Filename, "attachment"),
 			ContentType: valueOr(a.ContentType, "application/octet-stream"),
-			Content:     a.Content,
-		}
-		att.Size = mailutil.Base64Size(a.Content)
-		attachments = append(attachments, att)
+			Size:        len(content),
+			Content:     content,
+		})
 	}
 
 	replyTo := append([]string{}, fields.ReplyTo...)
@@ -216,11 +216,12 @@ func (s *server) handleSendgrid(w http.ResponseWriter, r *http.Request) {
 	}
 	attachments := make([]store.Attachment, 0, len(body.Attachments))
 	for _, a := range body.Attachments {
+		content := mailutil.DecodeBase64(a.Content)
 		attachments = append(attachments, store.Attachment{
 			Filename:    valueOr(a.Filename, "attachment"),
 			ContentType: valueOr(a.Type, "application/octet-stream"),
-			Size:        mailutil.Base64Size(a.Content),
-			Content:     a.Content,
+			Size:        len(content),
+			Content:     content,
 		})
 	}
 	replyTo := ""
@@ -331,11 +332,12 @@ func (s *server) handleMailjet(w http.ResponseWriter, r *http.Request) {
 	for i, m := range body.Messages {
 		attachments := make([]store.Attachment, 0, len(m.Attachments))
 		for _, a := range m.Attachments {
+			content := mailutil.DecodeBase64(a.Base64Content)
 			attachments = append(attachments, store.Attachment{
 				Filename:    valueOr(a.Filename, "attachment"),
 				ContentType: valueOr(a.ContentType, "application/octet-stream"),
-				Size:        mailutil.Base64Size(a.Base64Content),
-				Content:     a.Base64Content,
+				Size:        len(content),
+				Content:     content,
 			})
 		}
 		from, replyTo := "", ""
@@ -446,7 +448,7 @@ func (s *server) handleMailgun(w http.ResponseWriter, r *http.Request) {
 					Filename:    name,
 					ContentType: valueOr(fh.Header.Get("Content-Type"), "application/octet-stream"),
 					Size:        int(fh.Size),
-					Content:     base64.StdEncoding.EncodeToString(content[:n]),
+					Content:     content[:n],
 				})
 				fileLines = append(fileLines, fmt.Sprintf("%s: <file %s, %d bytes>", field, name, fh.Size))
 			}
@@ -529,11 +531,12 @@ func (s *server) ingestPostmarkMessage(m postmarkMessage, raw json.RawMessage) p
 	}
 	attachments := make([]store.Attachment, 0, len(m.Attachments))
 	for _, a := range m.Attachments {
+		content := mailutil.DecodeBase64(a.Content)
 		attachments = append(attachments, store.Attachment{
 			Filename:    valueOr(a.Name, "attachment"),
 			ContentType: valueOr(a.ContentType, "application/octet-stream"),
-			Size:        mailutil.Base64Size(a.Content),
-			Content:     a.Content,
+			Size:        len(content),
+			Content:     content,
 		})
 	}
 	var pretty any
@@ -661,11 +664,12 @@ func (s *server) handleBrevo(w http.ResponseWriter, r *http.Request) {
 		if a.Content == "" {
 			continue
 		}
+		content := mailutil.DecodeBase64(a.Content)
 		attachments = append(attachments, store.Attachment{
 			Filename:    valueOr(a.Name, "attachment"),
 			ContentType: "application/octet-stream",
-			Size:        mailutil.Base64Size(a.Content),
-			Content:     a.Content,
+			Size:        len(content),
+			Content:     content,
 		})
 	}
 	replyTo := ""

@@ -5,7 +5,7 @@ A local mail catcher (like Mailpit) that also emulates the HTTP send APIs of pop
 ## Stack
 
 - **Server**: Go 1.26+ (module `github.com/maildotnull/maildotnull`), single binary with the built SPA embedded via `go:embed`. Dependencies: `emersion/go-smtp` (SMTP listeners), `jhillyerd/enmime/v2` (MIME parsing), `google/uuid`.
-- **Client**: Vite 7 + React 19 SPA, TypeScript strict mode; **pnpm only** (`packageManager: pnpm@10.30.0`) — do not use npm or yarn. Node is a build/dev-time dependency only.
+- **Client**: Vite 7 + React 19 SPA, TypeScript strict mode; **pnpm only** (version pinned via `packageManager` in package.json) — do not use npm or yarn. Node is a build/dev-time dependency only.
 - **UI**: Tailwind CSS 4 (via `@tailwindcss/vite`), `lucide-react` icons, `clsx` for conditional classes.
 - **No database, no auth, no test framework** — deliberate: the whole product is an ephemeral in-memory dev tool.
 

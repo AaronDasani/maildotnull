@@ -38,9 +38,16 @@ func SplitAddressList(value string) []string {
 	return out
 }
 
-// Base64Size is the decoded size of a base64 payload, without decoding it.
-func Base64Size(content string) int {
-	return len(content) * 3 / 4
+// DecodeBase64 decodes a base64 attachment payload for storage. Undecodable
+// content is kept as-is (accept everything — this is a dev tool, not a validator).
+func DecodeBase64(content string) []byte {
+	if decoded, err := base64.StdEncoding.DecodeString(content); err == nil {
+		return decoded
+	}
+	if decoded, err := base64.RawStdEncoding.DecodeString(content); err == nil {
+		return decoded
+	}
+	return []byte(content)
 }
 
 // ParsedMail is the subset of a parsed MIME message the store needs.
@@ -92,17 +99,17 @@ func ParseMIME(raw []byte) (ParsedMail, error) {
 		if filename == "" {
 			filename = "attachment"
 		}
-		encoded := base64.StdEncoding.EncodeToString(p.Content)
 		attachments = append(attachments, store.Attachment{
 			Filename:    filename,
 			ContentType: p.ContentType,
 			Size:        len(p.Content),
-			Content:     encoded,
+			Content:     p.Content,
 		})
 		// Resolve cid: references to data URIs (mailparser did this for the TS
 		// server); the sandboxed preview iframe can't fetch cid: parts itself.
 		if p.ContentID != "" && html != "" {
 			cid := "cid:" + strings.Trim(p.ContentID, "<>")
+			encoded := base64.StdEncoding.EncodeToString(p.Content)
 			html = strings.ReplaceAll(html, cid, "data:"+p.ContentType+";base64,"+encoded)
 		}
 	}

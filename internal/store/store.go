@@ -11,15 +11,20 @@ import (
 	"github.com/google/uuid"
 )
 
-// Oldest messages are dropped beyond this cap; raise it if you need longer sessions.
-const maxMessages = 1000
+// Oldest messages are dropped beyond these caps; raise them if you need
+// longer sessions. maxBytes bounds body/attachment memory, not exact RSS.
+const (
+	maxMessages = 1000
+	maxBytes    = 200 << 20
+)
 
-// Attachment is stored with base64 content, mirroring the JSON wire shape.
+// Attachment content is stored decoded; encoding/json marshals []byte as
+// base64, so the wire shape the SPA sees is unchanged.
 type Attachment struct {
 	Filename    string `json:"filename"`
 	ContentType string `json:"contentType"`
 	Size        int    `json:"size"`
-	Content     string `json:"content"`
+	Content     []byte `json:"content"`
 }
 
 // Email is the full stored message. JSON tags match the TypeScript StoredEmail
@@ -43,6 +48,8 @@ type Email struct {
 	Read       bool   `json:"read"`
 	// Computed once in Add; List would otherwise re-run the regexes per fetch.
 	snippet string
+	// Approximate body/attachment bytes, for the maxBytes eviction budget.
+	size int
 }
 
 // Summary is the listing shape sent to the UI (no bodies/attachments).
@@ -62,6 +69,7 @@ type Summary struct {
 type Store struct {
 	mu     sync.Mutex
 	emails []*Email
+	bytes  int // sum of emails[i].size
 	subs   map[chan struct{}]struct{}
 }
 
@@ -127,12 +135,19 @@ func (s *Store) Add(email Email) Email {
 		email.Attachments = []Attachment{}
 	}
 	email.snippet = snippet(&email)
+	email.size = len(email.Text) + len(email.HTML) + len(email.Raw)
+	for _, a := range email.Attachments {
+		email.size += len(a.Content)
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.emails = append([]*Email{&email}, s.emails...)
-	if len(s.emails) > maxMessages {
-		s.emails = s.emails[:maxMessages]
+	s.bytes += email.size
+	for len(s.emails) > 1 && (len(s.emails) > maxMessages || s.bytes > maxBytes) {
+		last := len(s.emails) - 1
+		s.bytes -= s.emails[last].size
+		s.emails = s.emails[:last]
 	}
 	s.notify()
 	return email
@@ -205,6 +220,7 @@ func (s *Store) Remove(id string) bool {
 	defer s.mu.Unlock()
 	for i, e := range s.emails {
 		if e.ID == id {
+			s.bytes -= e.size
 			s.emails = append(s.emails[:i], s.emails[i+1:]...)
 			s.notify()
 			return true
@@ -217,6 +233,7 @@ func (s *Store) Clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.emails = nil
+	s.bytes = 0
 	s.notify()
 }
 
