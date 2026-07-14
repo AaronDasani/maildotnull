@@ -41,6 +41,8 @@ type Email struct {
 	Raw        string `json:"raw,omitempty"`
 	ReceivedAt string `json:"receivedAt"`
 	Read       bool   `json:"read"`
+	// Computed once in Add; List would otherwise re-run the regexes per fetch.
+	snippet string
 }
 
 // Summary is the listing shape sent to the UI (no bodies/attachments).
@@ -124,6 +126,7 @@ func (s *Store) Add(email Email) Email {
 	if email.Attachments == nil {
 		email.Attachments = []Attachment{}
 	}
+	email.snippet = snippet(&email)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -149,7 +152,7 @@ func (s *Store) List() []Summary {
 			ReceivedAt:     e.ReceivedAt,
 			Read:           e.Read,
 			HasAttachments: len(e.Attachments) > 0,
-			Snippet:        snippet(e),
+			Snippet:        e.snippet,
 		}
 	}
 	return summaries
