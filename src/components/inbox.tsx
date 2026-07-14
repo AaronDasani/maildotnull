@@ -195,7 +195,7 @@ function ErrorTestingPanel({
     });
 
   return (
-    <div className="absolute right-0 top-full z-50 mt-2 w-[30rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border bg-card text-left shadow-lg">
+    <div className="fixed inset-x-2 top-14 z-50 max-h-[calc(100dvh-4rem)] overflow-y-auto rounded-lg border bg-card text-left shadow-lg sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:max-h-none sm:w-[30rem] sm:max-w-[calc(100vw-2rem)]">
       <div className="flex items-start justify-between gap-3 border-b bg-accent/30 px-4 py-3">
         <div>
           <h3 className="flex items-center gap-1.5 text-sm font-semibold">
@@ -238,7 +238,7 @@ function ErrorTestingPanel({
             ))}
           </select>
         </div>
-        <div className="mt-2.5 grid grid-cols-2 gap-x-8 gap-y-2">
+        <div className="mt-2.5 grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
           {HTTP_PROVIDER_SOURCES.map((source) => (
             <label key={source} className="flex items-center justify-between gap-2 text-xs">
               <span className="truncate text-muted-foreground">{PROVIDERS[source].label}</span>
@@ -340,44 +340,46 @@ function ErrorTestingPanel({
 
 function CheatSheet() {
   return (
-    <div className="mx-auto flex h-full max-w-5xl flex-col items-center justify-center gap-6 p-8">
-      <div className="flex size-14 items-center justify-center rounded-xl bg-primary">
-        <Mail className="size-7 text-primary-foreground" />
-      </div>
-      <div className="text-center">
-        <h2 className="text-lg font-semibold">Waiting for mail</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Point your service at one of these endpoints — every message lands here instantly.
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto flex min-h-full max-w-5xl flex-col items-center justify-center gap-6 p-4 sm:p-8">
+        <div className="flex size-14 items-center justify-center rounded-xl bg-primary">
+          <Mail className="size-7 text-primary-foreground" />
+        </div>
+        <div className="text-center">
+          <h2 className="text-lg font-semibold">Waiting for mail</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Point your service at one of these endpoints — every message lands here instantly.
+          </p>
+        </div>
+        <div className="w-full overflow-x-auto rounded-lg border bg-card">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b text-xs uppercase tracking-wide text-muted-foreground">
+                <th className="px-4 py-2 font-medium">Provider</th>
+                <th className="px-4 py-2 font-medium">Endpoint</th>
+                <th className="px-4 py-2 font-medium">Connect</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(PROVIDERS).map(([key, p]) => (
+                <tr key={key} className="border-b last:border-0">
+                  <td className="px-4 py-2.5 whitespace-nowrap font-medium">{p.label}</td>
+                  <td className="px-4 py-2.5 whitespace-nowrap font-mono text-xs">{p.endpoint}</td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{p.hint}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Any API key is accepted. Nothing is delivered, nothing is persisted.
+        </p>
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <FlaskConical className="size-3.5" />
+          You can also test errors — use the error-testing button in the header to simulate
+          failures, delays, and timeouts.
         </p>
       </div>
-      <div className="w-full overflow-x-auto rounded-lg border bg-card">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b text-xs uppercase tracking-wide text-muted-foreground">
-              <th className="px-4 py-2 font-medium">Provider</th>
-              <th className="px-4 py-2 font-medium">Endpoint</th>
-              <th className="px-4 py-2 font-medium">Connect</th>
-            </tr>
-          </thead>
-          <tbody>
-            {Object.entries(PROVIDERS).map(([key, p]) => (
-              <tr key={key} className="border-b last:border-0">
-                <td className="px-4 py-2.5 whitespace-nowrap font-medium">{p.label}</td>
-                <td className="px-4 py-2.5 whitespace-nowrap font-mono text-xs">{p.endpoint}</td>
-                <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{p.hint}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        Any API key is accepted. Nothing is delivered, nothing is persisted.
-      </p>
-      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <FlaskConical className="size-3.5" />
-        You can also test errors — use the error-testing button in the header to simulate
-        failures, delays, and timeouts.
-      </p>
     </div>
   );
 }
@@ -464,7 +466,7 @@ function HtmlCheckPane({ html, hasText }: { html: string; hasText: boolean }) {
     );
   }
   return (
-    <div className="space-y-3 p-6">
+    <div className="space-y-3 p-4 sm:p-6">
       {findings.map((f, i) => {
         const { icon: Icon, className } = SEVERITY_STYLES[f.severity];
         return (
@@ -525,8 +527,8 @@ function LinkCheckPane({ detail }: { detail: EmailDetail }) {
     return <div className="p-6 text-sm italic text-muted-foreground">No links found</div>;
   }
   return (
-    <div className="p-6">
-      <div className="flex items-center gap-3">
+    <div className="p-4 sm:p-6">
+      <div className="flex flex-wrap items-center gap-3">
         <button
           onClick={check}
           disabled={checking || checkable.length === 0}
@@ -741,7 +743,7 @@ function DetailPane({
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col">
-      <div className="border-b bg-card px-6 py-4">
+      <div className="border-b bg-card px-4 py-3 sm:px-6 sm:py-4">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -913,15 +915,15 @@ function DetailPane({
           </div>
         )}
         {tab === "source" && (
-          <pre className="whitespace-pre-wrap break-all p-6 font-mono text-xs leading-5">
+          <pre className="whitespace-pre-wrap break-all p-4 font-mono text-xs leading-5 sm:p-6">
             {detail.html}
           </pre>
         )}
         {tab === "text" && (
-          <pre className="whitespace-pre-wrap p-6 font-mono text-sm leading-6">{detail.text}</pre>
+          <pre className="whitespace-pre-wrap p-4 font-mono text-sm leading-6 sm:p-6">{detail.text}</pre>
         )}
         {tab === "raw" && (
-          <pre className="whitespace-pre-wrap break-all p-6 font-mono text-xs leading-5">
+          <pre className="whitespace-pre-wrap break-all p-4 font-mono text-xs leading-5 sm:p-6">
             {detail.raw}
           </pre>
         )}
@@ -939,10 +941,10 @@ function DetailPane({
               )}
               {Object.entries(detail.headers).map(([key, value]) => (
                 <tr key={key} className="border-b align-top last:border-0">
-                  <td className="whitespace-nowrap px-6 py-2 font-mono text-xs font-medium">
+                  <td className="whitespace-nowrap px-4 py-2 font-mono text-xs font-medium sm:px-6">
                     {key}
                   </td>
-                  <td className="whitespace-pre-wrap px-6 py-2 font-mono text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                  <td className="whitespace-pre-wrap px-4 py-2 font-mono text-xs text-muted-foreground [overflow-wrap:anywhere] sm:px-6">
                     {value}
                   </td>
                 </tr>
@@ -1107,8 +1109,8 @@ export function Inbox() {
   );
 
   return (
-    <div className="relative z-10 flex h-screen flex-col">
-      <header className="flex items-center gap-3 border-b bg-card px-4 py-2.5">
+    <div className="relative z-10 flex h-dvh flex-col">
+      <header className="flex items-center gap-2 border-b bg-card px-3 py-2.5 sm:gap-3 sm:px-4">
         <button
           onClick={goHome}
           title="Show start page"
@@ -1220,31 +1222,35 @@ export function Inbox() {
             )}
           </div>
           {unread > 0 && (
-            <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground">
+            <span className="hidden rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground sm:inline">
               {unread} new
             </span>
           )}
           <button
             onClick={markAllRead}
             disabled={unread === 0}
+            title="Mark all read"
+            aria-label="Mark all read"
             className={cn(
               "flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground disabled:opacity-40",
               focusRing
             )}
           >
             <CheckCheck className="size-3.5" />
-            Mark all read
+            <span className="hidden sm:inline">Mark all read</span>
           </button>
           <button
             onClick={clearAll}
             disabled={messages.length === 0}
+            title="Clear all"
+            aria-label="Clear all"
             className={cn(
               "flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground disabled:opacity-40",
               focusRing
             )}
           >
             <Trash2 className="size-3.5" />
-            Clear all
+            <span className="hidden sm:inline">Clear all</span>
           </button>
           <ThemeToggle />
         </div>
