@@ -24,3 +24,8 @@ serve({ fetch: app.fetch, port: PORT, hostname: "::" }, (info) => {
 });
 
 await startSmtpServer();
+
+// Node as PID 1 (Docker) ignores SIGTERM by default; exit so the container
+// stops immediately instead of waiting for the 10s SIGKILL fallback.
+process.on("SIGTERM", () => process.exit(0));
+process.on("SIGINT", () => process.exit(0));
