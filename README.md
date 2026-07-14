@@ -51,6 +51,8 @@ podman run -d --name maildotnull \
 
 ### From source
 
+Requires Node.js + pnpm (for the web UI build) and Go 1.26+ (for the server).
+
 ```bash
 pnpm install
 pnpm dev          # or: pnpm build && pnpm start
@@ -145,13 +147,14 @@ The UI talks to a small internal API you can also script against — handy for a
 | `MAILDOTNULL_SMTP_PORT` | `1025` | Plaintext SMTP port |
 | `MAILDOTNULL_STARTTLS_PORT` | `1587` | SMTP port with STARTTLS |
 | `MAILDOTNULL_SMTPS_PORT` | `1465` | SMTPS port (implicit TLS) |
+| `MAILDOTNULL_HTTP_PORT` | `8025` | Web UI + provider API port |
 
-The web UI and provider APIs run on port 8025 (fixed via `pnpm dev` / `pnpm start`; remap with Docker's `-p` if needed).
+The web UI and provider APIs run on port 8025 by default (remap with Docker's `-p` if needed).
 
 ## Notes
 
 - Messages live in memory; a restart clears the inbox. The store keeps the most recent 1000 messages.
-- The SMTP server starts with the web server — in dev from the Vite plugin in `vite.config.ts`, in production from `src/server/index.ts` — so it runs with both `pnpm dev` and `pnpm start`.
+- The server is a single Go binary with the web UI embedded; SMTP always starts with it. In dev, the Vite plugin in `vite.config.ts` spawns the Go backend (`go run .`) and proxies API paths to it, so `pnpm dev` still gives you everything on port 8025.
 - HTML bodies always render inside a fully sandboxed iframe — caught mail can't run scripts or touch the app.
 
 ## Releases

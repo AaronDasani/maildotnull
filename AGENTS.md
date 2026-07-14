@@ -4,38 +4,42 @@ A local mail catcher (like Mailpit) that also emulates the HTTP send APIs of pop
 
 ## Stack
 
-- **Runtime**: Node.js, **pnpm only** (`packageManager: pnpm@10.30.0`) — do not use npm or yarn.
-- **Server**: Hono 4 + `@hono/node-server` (HTTP server), esbuild for the server bundle.
-- **Client**: Vite 7 + React 19 SPA, TypeScript strict mode.
+- **Server**: Go 1.26+ (module `github.com/maildotnull/maildotnull`), single binary with the built SPA embedded via `go:embed`. Dependencies: `emersion/go-smtp` (SMTP listeners), `jhillyerd/enmime/v2` (MIME parsing), `google/uuid`.
+- **Client**: Vite 7 + React 19 SPA, TypeScript strict mode; **pnpm only** (`packageManager: pnpm@10.30.0`) — do not use npm or yarn. Node is a build/dev-time dependency only.
 - **UI**: Tailwind CSS 4 (via `@tailwindcss/vite`), `lucide-react` icons, `clsx` for conditional classes.
-- **Mail**: `smtp-server` for the SMTP listener, `mailparser` for MIME parsing.
 - **No database, no auth, no test framework** — deliberate: the whole product is an ephemeral in-memory dev tool.
 
 ## Design Principles
 
-- **In-memory only**: all state lives in `src/lib/store.ts`. Never add a database, file persistence, or external service. A restart clearing the inbox is a feature.
+- **In-memory only**: all state lives in `internal/store`. Never add a database, file persistence, or external service. A restart clearing the inbox is a feature.
 - **Provider fidelity**: emulated endpoints must return each provider's real success shape (message IDs, `Queued. Thank you.`, HTTP 202 + `X-Message-Id`, …) so official SDKs treat the send as successful.
 - **Accept everything**: any API key/credentials are valid. Never add key validation or rate limiting.
 
 ## Architecture
 
-- `src/lib/store.ts` — singleton in-memory store (cap: 1000 messages, oldest dropped) with an `EventEmitter` that drives the SSE stream.
-- `src/lib/ingest.ts` — the single entry point every source (SMTP + all HTTP providers) must use to add a message.
-- `src/lib/smtp.ts` — SMTP server on port 1025 (override with `MAILDOTNULL_SMTP_PORT`); started by the Vite dev plugin (`vite.config.ts`) in dev and by `src/server/index.ts` in production.
-- `src/lib/providers.ts` — provider registry: label, badge classes, endpoint, and connection hint shown in the UI cheat-sheet.
-- `src/lib/types.ts` — `MailSource`, `StoredEmail`, and related shared types.
-- `src/server/app.ts` — Hono routing table, exports `app` + `API_PREFIXES`.
-- `src/server/routes/{inbox,events,error-testing,link-check}.ts` — internal inbox API (list/get/delete messages, attachment download, `GET /api/events` SSE stream). Documented in README's "Inbox API" section — keep both in sync.
-- Provider emulation lives in `src/server/routes/providers/{resend,sendgrid,mailjet,mailgun,postmark,brevo,ses}.ts`, registered in `src/server/app.ts` at the paths the real SDKs call (Resend `/emails`, SendGrid `/v3/mail/send`, Mailjet `/v3.1/send`, Mailgun `/v3/:domain/messages`, Postmark `/email` + `/email/batch`, Brevo `/v3/smtp/email`, SES v2 `/v2/email/outbound-emails` with `Simple` and raw MIME) — the Mailgun param route is registered last.
-- `src/server/index.ts` — production entry: serves the built SPA and API on port 8025, boots SMTP.
+Go server (all backend code lives under `internal/`, entry point `main.go`):
+
+- `internal/store` — singleton in-memory store (cap: 1000 messages, oldest dropped) with channel-based subscribers that drive the SSE stream. `Store.Add` is the single ingestion entry point every source (SMTP + all HTTP providers) must use; JSON tags on `store.Email`/`store.Summary` are the wire contract with the SPA.
+- `internal/smtpd` — the three SMTP listeners: 1025 plaintext (STARTTLS deliberately NOT advertised), 1587 STARTTLS, 1465 implicit TLS, with an ephemeral self-signed cert and accept-any AUTH (PLAIN + LOGIN). Ports overridable via `MAILDOTNULL_SMTP_PORT` / `MAILDOTNULL_STARTTLS_PORT` / `MAILDOTNULL_SMTPS_PORT`.
+- `internal/mailutil` — address formatting/splitting and MIME parsing (enmime), including wire-casing header extraction shared by SMTP and SES raw sends.
+- `internal/faults` — error-testing state (simulated provider/SMTP failures) and the per-provider failure response shapes.
+- `internal/web` — the whole HTTP surface: `server.go` (routing table + SPA fallback + API-prefix 404s), `inbox.go`/`events.go`/`errortesting.go`/`linkcheck.go` (internal inbox API, documented in README's "Inbox API" section — keep both in sync), `providers.go` (all provider emulation handlers at the paths the real SDKs call: Resend `/emails`, SendGrid `/v3/mail/send`, Mailjet `/v3.1/send`, Mailgun `/v3/{domain}/messages`, Postmark `/email` + `/email/batch`, Brevo `/v3/smtp/email`, SES v2 `/v2/email/outbound-emails` with `Simple` and raw MIME). Literal routes beat the Mailgun `{domain}` wildcard via ServeMux precedence.
+- `main.go` — embeds `dist/client` (`go:embed`), boots SMTP + HTTP on port 8025 (`MAILDOTNULL_HTTP_PORT` to override).
+
+Client (TypeScript, under `src/`):
+
 - `src/components/inbox.tsx` — the entire web UI, a single client component.
-- Server code (`src/server/`, `src/lib/`) uses relative imports because it's loaded through the Vite config bundle; the `@/*` alias is for client code only.
+- `src/lib/providers.ts` — provider registry: label, badge classes, endpoint, and connection hint shown in the UI cheat-sheet.
+- `src/lib/types.ts` — `MailSource`, `StoredEmail`, and related shared types (must mirror the Go JSON shapes).
+- `src/lib/error-testing.ts` — client-side types for the error-testing panel (state lives in `internal/faults`).
+- `src/lib/{mail-checks,dark-preview}.ts` — browser-only analysis/preview logic.
+- Dev mode: the Vite plugin in `vite.config.ts` spawns the Go backend (`go run .`, HTTP on 8026) and proxies `/api`, `/email*`, `/v2`, `/v3*` to it; Vite serves the SPA with HMR on 8025.
 
 ## Conventions
 
 - **Web UI runs on port 8025** (`pnpm dev` / `pnpm start`); SMTP on 1025. Don't change ports — they mirror Mailpit's defaults.
-- **Run `pnpm check` before finishing** — it chains lint, `tsc --noEmit`, and the Vite/esbuild build.
-- **Adding a provider** touches five places: a handler in `src/server/routes/providers/`, its registration in `src/server/app.ts` (before the Mailgun param route), the `MailSource` union in `src/lib/types.ts`, the `PROVIDERS` registry in `src/lib/providers.ts`, and a README table row. All ingestion goes through `ingest()`.
+- **Run `pnpm check` before finishing** — it chains lint, `tsc --noEmit`, `go vet ./...`, and the full build (Vite + `go build`).
+- **Adding a provider** touches five places: a handler in `internal/web/providers.go`, its route in `internal/web/server.go`, the `MailSource` union in `src/lib/types.ts`, the `PROVIDERS` registry in `src/lib/providers.ts`, and a README table row. Plus its failure shapes in `internal/faults`. All ingestion goes through `store.Add`.
 - **Icons**: `lucide-react` only. Do not add other icon libraries.
 - **Styling**: Tailwind utility classes only; conditional classes via `clsx`. No CSS modules, no styled-components, no inline style objects.
 - **Dark mode**: supported via Tailwind `dark:` variants — every new UI element needs both variants.
@@ -45,7 +49,7 @@ A local mail catcher (like Mailpit) that also emulates the HTTP send APIs of pop
 - **Error handling**: validate at the HTTP/SMTP boundary and return the provider's real error shape; trust types internally. No defensive try/catch for impossible states.
 - **Security**: rendered HTML bodies must stay inside the fully sandboxed iframe — never relax the `sandbox` attribute or render message HTML directly.
 - **i18n**: English only. Do not add an i18n framework.
-- **Environment variables**: `MAILDOTNULL_SMTP_PORT` is the only one. Document any new var in the README.
+- **Environment variables**: `MAILDOTNULL_SMTP_PORT`, `MAILDOTNULL_STARTTLS_PORT`, `MAILDOTNULL_SMTPS_PORT`, `MAILDOTNULL_HTTP_PORT` — nothing else. Document any new var in the README.
 - **Deployment**: none — this is a local dev tool, run via `pnpm dev` or `pnpm build && pnpm start`.
 
 # Basic Behaviour
