@@ -17,7 +17,9 @@ app.use("*", async (c, next) => {
 app.use("*", serveStatic({ root: "./dist/client" }));
 app.get("*", serveStatic({ path: "./dist/client/index.html" }));
 
-serve({ fetch: app.fetch, port: PORT, hostname: "0.0.0.0" }, (info) => {
+// "::" binds dual-stack so rootless podman/pasta can forward host ::1
+// (localhost) connections as well as IPv4.
+serve({ fetch: app.fetch, port: PORT, hostname: "::" }, (info) => {
   console.log(`[maildotnull] web UI and provider APIs listening on port ${info.port} (all interfaces)`);
 });
 
